@@ -167,7 +167,7 @@ func TestExtractAuthInfo(t *testing.T) {
 func TestMiddleware(t *testing.T) {
 
 	Convey("Given a strict manager", t, func() {
-		mgr := StrictSHA1Manager{prefix: "SAUTH", key: "contextKey", secret: "super-secret-password", value: nil, required: true}
+		mgr := StrictSHA1Manager{Prefix: "SAUTH", Key: "contextKey", Secret: "super-secret-password", Value: nil, Required: true}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
@@ -314,7 +314,7 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	Convey("Given a non required manager", t, func() {
-		mgr := StrictSHA1Manager{prefix: "SAUTH", key: "contextKey", secret: "super-secret-password", value: nil, required: false}
+		mgr := StrictSHA1Manager{Prefix: "SAUTH", Key: "contextKey", Secret: "super-secret-password", Value: nil, Required: false}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}

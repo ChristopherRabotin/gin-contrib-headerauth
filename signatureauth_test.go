@@ -38,26 +38,27 @@ func (mgr StrictSHA1Manager) AuthHeaderPrefix() string {
 func (mgr StrictSHA1Manager) SecretKey(access string, req *http.Request) (string, *Error) {
 	if req.ContentLength != 0 && req.Body == nil {
 		// Not sure whether net/http or Gin handles these kinds of fun situations.
-		return "", &Error{400, errors.New("Received a forged packet.")}
+		return "", &Error{400, errors.New("received a forged packet")}
 	}
 	// Grabbing the date and making sure it's in the correct format and is within fifteen minutes.
-	if dateHeader := req.Header.Get("Date"); dateHeader == "" {
-		return "", &Error{406, errors.New("No Date header provided.")}
-	} else {
-		date, derr := time.Parse("2006-01-02T15:04:05.000Z", dateHeader)
-		if derr != nil {
-			return "", &Error{408, errors.New("Could not parse date.")}
-		} else if time.Since(date) > time.Minute*15 {
-			return "", &Error{410, errors.New("Request is too old.")}
-		}
+	dateHeader := req.Header.Get("Date");
+	if dateHeader == "" {
+		return "", &Error{406, errors.New("no Date header provided")}
 	}
+	date, derr := time.Parse("2006-01-02T15:04:05.000Z", dateHeader)
+	if derr != nil {
+		return "", &Error{408, errors.New("could not parse date")}
+	} else if time.Since(date) > time.Minute*15 {
+		return "", &Error{410, errors.New("request is too old")}
+	}
+
 	// The headers look good, let's check the access key.
 	// If the reading the access key requires any kind of IO (database, or file reading, etc.)
 	// it's quite good to only verify if that access key is valid once all the checks are done.
 	if access == "my_access_key" {
 		return mgr.Secret, nil
 	}
-	return "", &Error{418, errors.New("You are a teapot.")}
+	return "", &Error{418, errors.New("you are a teapot")}
 }
 
 // ContextKey returns the key which will store the return from ContextValue() in Gin's context.
@@ -90,22 +91,22 @@ func (mgr StrictSHA1Manager) DataToSign(req *http.Request) (string, *Error) {
 	// We'll use the HTTP-Verb, the MD5 checksum of the Body, if any, and the Date header in ISO format.
 	// http://docs.aws.amazon.com/AmazonS3/latest/dev/RESTAuthentication.html
 	// Note: We are returning a variety of error codes which don't follow the spec only for the purpose of testing.
-	serialized_data := req.Method + "\n"
+	serializedData := req.Method + "\n"
 	if req.ContentLength != 0 {
 		body, err := ioutil.ReadAll(req.Body)
 		if err != nil {
-			return "", &Error{402, errors.New("Could not read the body.")}
+			return "", &Error{402, errors.New("could not read the body")}
 		}
 		hash := md5.New()
 		hash.Write(body)
-		serialized_data += hex.EncodeToString(hash.Sum(nil)) + "\n"
+		serializedData += hex.EncodeToString(hash.Sum(nil)) + "\n"
 	} else {
-		serialized_data += "\n"
+		serializedData += "\n"
 	}
 	// We know from SecretKey that the Date header is present and fits our time constaints.
-	serialized_data += req.Header.Get("Date")
+	serializedData += req.Header.Get("Date")
 
-	return serialized_data, nil
+	return serializedData, nil
 }
 
 // TestExtractAuthInfo tests the correct extraction of information from the headers.
@@ -122,7 +123,7 @@ func TestExtractAuthInfo(t *testing.T) {
 			})
 			Convey("The error should be a 401 with a specific message.", func() {
 				So(err.Status, ShouldEqual, 401)
-				So(err.Err.Error(), ShouldEqual, "Invalid authorization header.")
+				So(err.Err.Error(), ShouldEqual, "invalid authorization header")
 			})
 		})
 
@@ -134,7 +135,7 @@ func TestExtractAuthInfo(t *testing.T) {
 			})
 			Convey("The error should be a 401 with a specific message.", func() {
 				So(err.Status, ShouldEqual, 401)
-				So(err.Err.Error(), ShouldEqual, "Invalid authorization header.")
+				So(err.Err.Error(), ShouldEqual, "invalid authorization header")
 			})
 		})
 
@@ -146,7 +147,7 @@ func TestExtractAuthInfo(t *testing.T) {
 			})
 			Convey("The error should be a 401 with a specific message.", func() {
 				So(err.Status, ShouldEqual, 401)
-				So(err.Err.Error(), ShouldEqual, "Invalid format for access key and signature.")
+				So(err.Err.Error(), ShouldEqual, "invalid format for access key and signature")
 			})
 		})
 
@@ -167,7 +168,7 @@ func TestExtractAuthInfo(t *testing.T) {
 func TestMiddleware(t *testing.T) {
 
 	Convey("Given a strict manager", t, func() {
-		mgr := StrictSHA1Manager{prefix: "SAUTH", key: "contextKey", secret: "super-secret-password", value: nil, required: true}
+		mgr := StrictSHA1Manager{Prefix: "SAUTH", Key: "contextKey", Secret: "super-secret-password", Value: nil, Required: true}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
@@ -243,8 +244,8 @@ func TestMiddleware(t *testing.T) {
 
 			Convey("And the Date header is valid but too old", func() {
 				utc, _ := time.LoadLocation("UTC")
-				old_date := time.Date(2006, 05, 04, 03, 02, 01, 00, utc)
-				headers["Date"] = []string{old_date.Format("2006-01-02T15:04:05.000Z")}
+				oldDate := time.Date(2006, 05, 04, 03, 02, 01, 00, utc)
+				headers["Date"] = []string{oldDate.Format("2006-01-02T15:04:05.000Z")}
 				for _, meth := range methods {
 					Convey(fmt.Sprintf("and doing a %s request", meth), func() {
 						req := performRequest(router, meth, "/test/", headers, nil)
@@ -275,9 +276,9 @@ func TestMiddleware(t *testing.T) {
 			headers["Date"] = []string{now}
 			for _, meth := range methods {
 				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-					sig_data := meth + "\n\n" + now
+					sigData := meth + "\n\n" + now
 					hash := hmac.New(sha1.New, []byte(mgr.Secret))
-					hash.Write([]byte(sig_data))
+					hash.Write([]byte(sigData))
 					signature := hex.EncodeToString(hash.Sum(nil))
 					headers["Authorization"] = []string{"SAUTH my_access_key:" + signature}
 					req := performRequest(router, meth, "/test/", headers, nil)
@@ -298,9 +299,9 @@ func TestMiddleware(t *testing.T) {
 					body := "This is the  body of my request."
 					bhash := md5.New()
 					bhash.Write([]byte(body))
-					sig_data := meth + "\n" + hex.EncodeToString(bhash.Sum(nil)) + "\n" + now
+					sigData := meth + "\n" + hex.EncodeToString(bhash.Sum(nil)) + "\n" + now
 					hash := hmac.New(sha1.New, []byte(secret))
-					hash.Write([]byte(sig_data))
+					hash.Write([]byte(sigData))
 					signature := hex.EncodeToString(hash.Sum(nil))
 					headers["Authorization"] = []string{"SAUTH my_access_key:" + signature}
 					req := performRequest(router, meth, "/test/", headers, bytes.NewBufferString(body))
@@ -314,7 +315,7 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	Convey("Given a non required manager", t, func() {
-		mgr := StrictSHA1Manager{prefix: "SAUTH", key: "contextKey", secret: "super-secret-password", value: nil, required: false}
+		mgr := StrictSHA1Manager{Prefix: "SAUTH", Key: "contextKey", Secret: "super-secret-password", Value: nil, Required: false}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}

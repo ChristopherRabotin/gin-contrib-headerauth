@@ -1,6 +1,7 @@
-# The signedauth middleware
+# ChristopherRabotin/gin-contrib-signedauth [![Build Status](https://travis-ci.org/ChristopherRabotin/gin-contrib-signedauth.svg)](https://travis-ci.org/ChristopherRabotin/gin-contrib-signedauth)
 ## Purpose
 Allows to protect routes with a signature based authentication.
+
 ## Features
 Quite customizable, including the following custom settings.
 * Hash used for signature (e.g. SHA-1), cf `SignedAuthManager.HashFunction`.

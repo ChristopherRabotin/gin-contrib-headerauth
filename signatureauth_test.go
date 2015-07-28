@@ -41,7 +41,8 @@ func (mgr StrictSHA1Manager) SecretKey(access string, req *http.Request) (string
 		return "", &Error{400, errors.New("received a forged packet")}
 	}
 	// Grabbing the date and making sure it's in the correct format and is within fifteen minutes.
-	if dateHeader := req.Header.Get("Date"); dateHeader == "" {
+	dateHeader := req.Header.Get("Date");
+	if dateHeader == "" {
 		return "", &Error{406, errors.New("no Date header provided")}
 	}
 	date, derr := time.Parse("2006-01-02T15:04:05.000Z", dateHeader)
@@ -122,7 +123,7 @@ func TestExtractAuthInfo(t *testing.T) {
 			})
 			Convey("The error should be a 401 with a specific message.", func() {
 				So(err.Status, ShouldEqual, 401)
-				So(err.Err.Error(), ShouldEqual, "Invalid authorization header.")
+				So(err.Err.Error(), ShouldEqual, "invalid authorization header")
 			})
 		})
 
@@ -134,7 +135,7 @@ func TestExtractAuthInfo(t *testing.T) {
 			})
 			Convey("The error should be a 401 with a specific message.", func() {
 				So(err.Status, ShouldEqual, 401)
-				So(err.Err.Error(), ShouldEqual, "Invalid authorization header.")
+				So(err.Err.Error(), ShouldEqual, "invalid authorization header")
 			})
 		})
 
@@ -146,7 +147,7 @@ func TestExtractAuthInfo(t *testing.T) {
 			})
 			Convey("The error should be a 401 with a specific message.", func() {
 				So(err.Status, ShouldEqual, 401)
-				So(err.Err.Error(), ShouldEqual, "Invalid format for access key and signature.")
+				So(err.Err.Error(), ShouldEqual, "invalid format for access key and signature")
 			})
 		})
 

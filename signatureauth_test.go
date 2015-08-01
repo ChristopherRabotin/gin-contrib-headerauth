@@ -41,7 +41,7 @@ func (mgr StrictSHA1Manager) SecretKey(access string, req *http.Request) (string
 		return "", &Error{400, errors.New("received a forged packet")}
 	}
 	// Grabbing the date and making sure it's in the correct format and is within fifteen minutes.
-	dateHeader := req.Header.Get("Date");
+	dateHeader := req.Header.Get("Date")
 	if dateHeader == "" {
 		return "", &Error{406, errors.New("no Date header provided")}
 	}
@@ -107,6 +107,90 @@ func (mgr StrictSHA1Manager) DataToSign(req *http.Request) (string, *Error) {
 	serializedData += req.Header.Get("Date")
 
 	return serializedData, nil
+}
+
+// EmptyManager is an example definition of an AuthKeyManager struct.
+type EmptyManager struct {
+}
+
+// EmptyManager returns the prefix used in the initialization.
+func (mgr EmptyManager) AuthHeaderPrefix() string {
+	return "EMPTY"
+}
+
+// SecretKey returns the secret key from the provided access key.
+func (mgr EmptyManager) SecretKey(access string, req *http.Request) (secret string, err *Error) {
+	secret = "" // There is no secret key, just an access key.
+	if access == "valid" {
+		err = nil
+	} else {
+		err = &Error{403, errors.New("invalid access key")}
+	}
+	return
+}
+
+// ContextKey returns the key which will store the return from ContextValue() in Gin's context.
+func (mgr EmptyManager) ContextKey() string {
+	return "allGood"
+}
+
+// ContextValue returns the value to store in Gin's context at ContextKey().
+func (mgr EmptyManager) ContextValue(access string) interface{} {
+	return true
+}
+
+// AuthHeaderRequired returns true because we want to forbid any non-signed request in this group.
+func (mgr EmptyManager) AuthHeaderRequired() bool {
+	return true
+}
+
+// HashFunction returns sha1.New.
+func (mgr EmptyManager) HashFunction() func() hash.Hash {
+	return sha1.New
+}
+
+// DataToSign returns an empty string. This allows us to test that we can only check for a valid access key.
+func (mgr EmptyManager) DataToSign(req *http.Request) (string, *Error) {
+	return "", nil
+}
+
+// FailingManager is an example definition of an AuthKeyManager struct.
+type FailingManager struct {
+}
+
+// FailingManager returns the prefix used in the initialization.
+func (mgr FailingManager) AuthHeaderPrefix() string {
+	return "FAIL"
+}
+
+// SecretKey returns the secret key from the provided access key.
+func (mgr FailingManager) SecretKey(access string, req *http.Request) (string, *Error) {
+	return "", nil
+}
+
+// ContextKey returns the key which will store the return from ContextValue() in Gin's context.
+func (mgr FailingManager) ContextKey() string {
+	return "allGood"
+}
+
+// ContextValue returns the value to store in Gin's context at ContextKey().
+func (mgr FailingManager) ContextValue(access string) interface{} {
+	return false
+}
+
+// AuthHeaderRequired returns true because we want to forbid any non-signed request in this group.
+func (mgr FailingManager) AuthHeaderRequired() bool {
+	return true
+}
+
+// HashFunction returns sha1.New.
+func (mgr FailingManager) HashFunction() func() hash.Hash {
+	return sha1.New
+}
+
+// DataToSign returns an empty string. This allows us to test that we can only check for a valid access key.
+func (mgr FailingManager) DataToSign(req *http.Request) (string, *Error) {
+	return "", &Error{418, errors.New("teapot failing manager")}
 }
 
 // TestExtractAuthInfo tests the correct extraction of information from the headers.
@@ -294,9 +378,9 @@ func TestMiddleware(t *testing.T) {
 			secret := "super-secret-password"
 			now := time.Now().Format("2006-01-02T15:04:05.000Z")
 			headers["Date"] = []string{now}
-			for _, meth := range []string{"POST", "PUT"} {
+			for _, meth := range methods {
 				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-					body := "This is the  body of my request."
+					body := "This is the body of my request."
 					bhash := md5.New()
 					bhash.Write([]byte(body))
 					sigData := meth + "\n" + hex.EncodeToString(bhash.Sum(nil)) + "\n" + now
@@ -333,6 +417,79 @@ func TestMiddleware(t *testing.T) {
 				})
 			})
 		}
+
+	})
+
+	Convey("Given an access key only manager", t, func() {
+		mgr := EmptyManager{}
+		router := gin.Default()
+		router.Use(SignatureAuth(mgr))
+		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
+		for _, meth := range methods {
+			router.Handle(meth, "/test/", []gin.HandlerFunc{func(c *gin.Context) {
+				c.String(http.StatusOK, "Success.")
+			}}[0])
+		}
+
+		Convey("When the access key is valid.", func() {
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					hash := hmac.New(sha1.New, []byte(""))
+					hash.Write([]byte(""))
+					signature := hex.EncodeToString(hash.Sum(nil))
+					headers["Authorization"] = []string{"EMPTY valid:" + signature}
+					req := performRequest(router, meth, "/test/", headers, nil)
+					Convey("the middleware should respond 200 OK.", func() {
+						So(req.Code, ShouldEqual, 200)
+					})
+				})
+			}
+		})
+
+		Convey("When the access key is invalid.", func() {
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					hash := hmac.New(sha1.New, []byte(""))
+					hash.Write([]byte(""))
+					signature := hex.EncodeToString(hash.Sum(nil))
+					headers["Authorization"] = []string{"EMPTY invalid:" + signature}
+					req := performRequest(router, meth, "/test/", headers, nil)
+					Convey("the middleware should respond 403.", func() {
+						So(req.Code, ShouldEqual, 403)
+					})
+				})
+			}
+		})
+	})
+
+	Convey("Given a failing manager", t, func() {
+		mgr := FailingManager{}
+		router := gin.Default()
+		router.Use(SignatureAuth(mgr))
+		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
+		for _, meth := range methods {
+			router.Handle(meth, "/test/", []gin.HandlerFunc{func(c *gin.Context) {
+				c.String(http.StatusOK, "Success.")
+			}}[0])
+		}
+
+		Convey("When the access key is valid.", func() {
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					hash := hmac.New(sha1.New, []byte(""))
+					hash.Write([]byte(""))
+					signature := hex.EncodeToString(hash.Sum(nil))
+					headers["Authorization"] = []string{"FAIL valid:" + signature}
+					req := performRequest(router, meth, "/test/", headers, nil)
+					Convey("the middleware should respond 418 Teapot.", func() {
+						So(req.Code, ShouldEqual, 418)
+					})
+				})
+			}
+		})
 
 	})
 }

@@ -378,7 +378,7 @@ func TestMiddleware(t *testing.T) {
 			secret := "super-secret-password"
 			now := time.Now().Format("2006-01-02T15:04:05.000Z")
 			headers["Date"] = []string{now}
-			for _, meth := range []string{"POST", "PUT"} {
+			for _, meth := range methods {
 				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
 					body := "This is the body of my request."
 					bhash := md5.New()

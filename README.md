@@ -1,4 +1,4 @@
-# ChristopherRabotin/gin-contrib-signedauth [![Build Status](https://travis-ci.org/ChristopherRabotin/gin-contrib-signedauth.svg?branch=master)](https://travis-ci.org/ChristopherRabotin/gin-contrib-signedauth) [![Coverage Status](https://coveralls.io/repos/ChristopherRabotin/gin-contrib-signedauth/badge.svg?branch=master&service=github)](https://coveralls.io/github/ChristopherRabotin/gin-contrib-signedauth?branch=master
+# ChristopherRabotin/gin-contrib-signedauth [![Build Status](https://travis-ci.org/ChristopherRabotin/gin-contrib-signedauth.svg?branch=master)](https://travis-ci.org/ChristopherRabotin/gin-contrib-signedauth) [![Coverage Status](https://coveralls.io/repos/ChristopherRabotin/gin-contrib-signedauth/badge.svg?branch=master&service=github)](https://coveralls.io/github/ChristopherRabotin/gin-contrib-signedauth?branch=master)
 ## Purpose
 Allows to protect routes with a signature based authentication.
 

@@ -39,7 +39,7 @@ Here, we'll be implementing a *similar* signing method to the [Amazon AWS REST o
 In the following example, what is in curly brackets (`{` and `}`) corresponds to a variable. There will be an example below (new lines are `\n`).
 ```
 {REQUEST METHOD}
-base64_encode(md5_checksum({REQUEST BODY}))
+hex_digest(md5_checksum({REQUEST BODY}))
 iso_format({DATE TIME})
 ```
 For example, in the case of a POST request at `2015-08-03T19:24:21.807Z` where the body is set to `"This is the body of my request."` and the secret is `"super-secret-password"`,
@@ -60,7 +60,7 @@ allowed if there is a dash before each uppercase letter (apart from the first le
 
 For example, let's say that the header which will contain the access key and signature is `Authorization` and the prefix prior to the access key and signature is `SAUTH`.
 The prefix avoids conflict with other middlewares which read that same header. It also allows for support of several signedauth middleware on the same routes, but whose
-logic is different based on the protocol (one could imagine an update to the protocol while still having to support old clients, e.g. SAUTH and SAUTH2).
+logic is different based on the protocol (one could imagine an update to the protocol while still having to support old clients, e.g. `SAUTH` and `SAUTH2`).
 
 Building on the example above, we will set the following headers:
 * `Authorization` to `SAUTH my_access_key:44393657f98352b9cfeb16f6152f1d02682c3885`;
@@ -71,11 +71,14 @@ Building on the example above, we will set the following headers:
 We'll start be defining a `struct` which details how the manager should work.
 
 **Note:** we'll be embedding the `HMACManager` struct from `managers.go` which massively simplifies the definition of an auth manager by already partially implementing the `Manager`
-interface.
+interface. If you need (or *want* for some odd reason) to write your full implementation of the `Manager` interface, check out [managers.go](./managers.go).
 
 ```go
 // SHA384Manager is an example definition of an Manager struct.
 type SHA384Manager struct {
+	// --> If using a database to check for the secret, you'll probably use a different struct, which may have a pointer
+	// --> to your database connection or even not set it, and have all the database connection, querying, and friends
+	// --> performed in the `CheckHeader` function.
 	Secret string
 	*signedauth.HMACManager
 }
@@ -157,16 +160,13 @@ func (m SHA384Manager) Authorize(access string) interface{} {
 Since `SHA384Manager` embeds the `HMACManager`, the following defaults apply:
 * Header name where the access key and signature should be: `Authorization`
 * Hash function used for signing the data with the secret key [SHA384](https://en.wikipedia.org/wiki/SHA-2) (`sha512.New384` in Go).
-* Header separator between the access key and the signature is a colon `:`. This **must** be a character which cannot be found in the access key.
+* Header separator between the access key and the signature is a colon `:`. This must be a character which **cannot** be found in the access key.
 
 ### Setting the auth manager as a middleware
 In the main Gin router, you must initialize and set this created auth manager.
 ```go
 func main() {
 	// Setting the secret to "super-secret-password".
-	// --> If using a database to check for the secret, you'll probably set this to a pointer to your database connection
-	// --> or even not set it, and have all the database connection, querying, and friends performed in the `CheckHeader`
-	// --> function.
 	// Setting the header prefix to `SAUTH`, and the context key in Gin to be called `contextKey`.
 	mgr := SHA384Manager{"super-secret-password", signedauth.NewHMACSHA384Manager("SAUTH", "contextKey")}
 	router := gin.Default()
@@ -239,3 +239,7 @@ func main() {
 	}
 }
 ```
+
+### Header example
+With the previously defined manager, the following auth header would be valid.
+* `X-Token-Auth`: `Token MyValidTokenWhichOnlyIKnow!`

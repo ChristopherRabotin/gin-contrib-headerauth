@@ -111,11 +111,7 @@ func (mgr StrictSHA1Manager) DataToSign(req *http.Request) (string, *Error) {
 
 // EmptyManager is an example definition of an AuthKeyManager struct.
 type EmptyManager struct {
-}
-
-// EmptyManager returns the prefix used in the initialization.
-func (mgr EmptyManager) AuthHeaderPrefix() string {
-	return "EMPTY"
+	*HMACManager
 }
 
 // SecretKey returns the secret key from the provided access key.
@@ -129,24 +125,9 @@ func (mgr EmptyManager) SecretKey(access string, req *http.Request) (secret stri
 	return
 }
 
-// ContextKey returns the key which will store the return from ContextValue() in Gin's context.
-func (mgr EmptyManager) ContextKey() string {
-	return "allGood"
-}
-
 // ContextValue returns the value to store in Gin's context at ContextKey().
 func (mgr EmptyManager) ContextValue(access string) interface{} {
 	return true
-}
-
-// AuthHeaderRequired returns true because we want to forbid any non-signed request in this group.
-func (mgr EmptyManager) AuthHeaderRequired() bool {
-	return true
-}
-
-// HashFunction returns sha1.New.
-func (mgr EmptyManager) HashFunction() func() hash.Hash {
-	return sha1.New
 }
 
 // DataToSign returns an empty string. This allows us to test that we can only check for a valid access key.
@@ -156,11 +137,7 @@ func (mgr EmptyManager) DataToSign(req *http.Request) (string, *Error) {
 
 // FailingManager is an example definition of an AuthKeyManager struct.
 type FailingManager struct {
-}
-
-// FailingManager returns the prefix used in the initialization.
-func (mgr FailingManager) AuthHeaderPrefix() string {
-	return "FAIL"
+	*HMACManager
 }
 
 // SecretKey returns the secret key from the provided access key.
@@ -168,24 +145,9 @@ func (mgr FailingManager) SecretKey(access string, req *http.Request) (string, *
 	return "", nil
 }
 
-// ContextKey returns the key which will store the return from ContextValue() in Gin's context.
-func (mgr FailingManager) ContextKey() string {
-	return "allGood"
-}
-
 // ContextValue returns the value to store in Gin's context at ContextKey().
 func (mgr FailingManager) ContextValue(access string) interface{} {
 	return false
-}
-
-// AuthHeaderRequired returns true because we want to forbid any non-signed request in this group.
-func (mgr FailingManager) AuthHeaderRequired() bool {
-	return true
-}
-
-// HashFunction returns sha1.New.
-func (mgr FailingManager) HashFunction() func() hash.Hash {
-	return sha1.New
 }
 
 // DataToSign returns an empty string. This allows us to test that we can only check for a valid access key.
@@ -421,7 +383,7 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	Convey("Given an access key only manager", t, func() {
-		mgr := EmptyManager{}
+		mgr := EmptyManager{NewHMACSHA1Manager("EMPTY", "allGood")}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
@@ -465,7 +427,7 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	Convey("Given a failing manager", t, func() {
-		mgr := FailingManager{}
+		mgr := FailingManager{NewHMACSHA1Manager("FAIL", "allGood")}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}

@@ -12,17 +12,6 @@ import (
 	"strings"
 )
 
-// Manager defines the functions needed to fulfill an auth key managing role.
-type Manager interface {
-	AuthHeaderPrefix() string                         // The beginning of the string from the HTTP_AUTHORIZATION header. The exact header must be followed by a space.
-	SecretKey(string, *http.Request) (string, *Error) // The secret key for the provided access key and request. Header verification should happen here, and an error returned to fail.
-	DataToSign(*http.Request) (string, *Error)        // The data which must be signed and verified, or an error to return.
-	AuthHeaderRequired() bool                         // Whether or not a request without any header should be accepted (c.Next) or forbidden (c.AbortWithError with status 403).
-	HashFunction() func() hash.Hash                   // Returns the hash function to use, e.g. sha1.New (imported from "crypto/sha1"), or sha512.New384 for SHA-384.
-	ContextKey() string                               // The key in the context where will be set the appropriate value if the request was correctly signed.
-	ContextValue(string) interface{}                  // The value which will be stored in the context if authentication is successful, from the access key.
-}
-
 // Error defines the authentication failure with a status. The error string will *not* be returned by Gin.
 type Error struct {
 	Status int   // The status for this failure.

@@ -30,21 +30,16 @@ func SignatureAuth(m Manager) gin.HandlerFunc {
 			c.Next()
 		} else {
 			// Authorization header has the correct format.
-			secret, keyerr := m.Authorize(accesskey, c.Request)
-			if keyerr != nil {
-				c.AbortWithError(keyerr.Status, keyerr.Err)
+			secret, dataToSign, err := m.CheckHeader(accesskey, c.Request)
+			if err != nil {
+				c.AbortWithError(err.Status, err.Err)
+			} else if hashFunc := m.HashFunction(); hashFunc != nil && !isSignatureValid(hashFunc, secret, dataToSign, signature) {
+				// Accesskey is valid but signature is not.
+				c.AbortWithError(http.StatusUnauthorized, errors.New("wrong access key or signature"))
 			} else {
-				data, dataerr := m.DataToSign(c.Request)
-				if dataerr != nil {
-					c.AbortWithError(dataerr.Status, dataerr.Err)
-				} else if hashFunc := m.HashFunction(); hashFunc != nil && !isSignatureValid(hashFunc, secret, data, signature) {
-					// Accesskey is valid but signature is not.
-					c.AbortWithError(http.StatusUnauthorized, errors.New("wrong access key or signature"))
-				} else {
-					// Accesskey and signature are valid.
-					c.Set(m.ContextKey(), m.ContextValue(accesskey))
-					c.Next()
-				}
+				// Accesskey and signature are valid.
+				c.Set(m.ContextKey(), m.Authorize(accesskey))
+				c.Next()
 			}
 		}
 	}

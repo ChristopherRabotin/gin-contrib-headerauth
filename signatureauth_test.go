@@ -24,65 +24,63 @@ type StrictSHA1Manager struct {
 	*HMACManager
 }
 
-// Authorize returns the secret key from the provided access key.
+// CheckHeader returns the secret key and the data to sign from the provided access key.
 // Here should reside additional verifications on the header, or other parts of the request, if needed.
-func (m StrictSHA1Manager) Authorize(access string, req *http.Request) (string, *AuthErr) {
+func (m StrictSHA1Manager) CheckHeader(access string, req *http.Request) (string, string, *AuthErr) {
 	if req.ContentLength != 0 && req.Body == nil {
 		// Not sure whether net/http or Gin handles these kinds of fun situations.
-		return "", &AuthErr{400, errors.New("received a forged packet")}
+		return "", "", &AuthErr{400, errors.New("received a forged packet")}
 	}
 	// Grabbing the date and making sure it's in the correct format and is within fifteen minutes.
 	dateHeader := req.Header.Get("Date")
 	if dateHeader == "" {
-		return "", &AuthErr{406, errors.New("no Date header provided")}
+		return "", "", &AuthErr{406, errors.New("no Date header provided")}
 	}
 	date, derr := time.Parse("2006-01-02T15:04:05.000Z", dateHeader)
 	if derr != nil {
-		return "", &AuthErr{408, errors.New("could not parse date")}
+		return "", "", &AuthErr{408, errors.New("could not parse date")}
 	} else if time.Since(date) > time.Minute*15 {
-		return "", &AuthErr{410, errors.New("request is too old")}
+		return "", "", &AuthErr{410, errors.New("request is too old")}
 	}
 
-	// The headers look good, let's check the access key.
+	// The headers look good, let's check the access key, and get the data to sign.
+	// The data to sign is a string representing the data which will be HMAC'd with
+	// the secret and used to check authenticity of the request.
 	// If the reading the access key requires any kind of IO (database, or file reading, etc.)
 	// it's quite good to only verify if that access key is valid once all the checks are done.
 	if access == "my_access_key" {
-		return m.Secret, nil
+		// In this example, we'll be implementing a *similar* signing method to the Amazon AWS REST one.
+		// We'll use the HTTP-Verb, the MD5 checksum of the Body, if any, and the Date header in ISO format.
+		// http://docs.aws.amazon.com/AmazonS3/latest/dev/RESTAuthentication.html
+		// Note: We are returning a variety of error codes which don't follow the spec only for the purpose of testing.
+		serializedData := req.Method + "\n"
+		if req.ContentLength != 0 {
+			body, err := ioutil.ReadAll(req.Body)
+			if err != nil {
+				return "", "", &AuthErr{402, errors.New("could not read the body")}
+			}
+			hash := md5.New()
+			hash.Write(body)
+			serializedData += hex.EncodeToString(hash.Sum(nil)) + "\n"
+		} else {
+			serializedData += "\n"
+		}
+		// We know from Authorize that the Date header is present and fits our time constaints.
+		serializedData += req.Header.Get("Date")
+
+		return m.Secret, serializedData, nil
 	}
-	return "", &AuthErr{418, errors.New("you are a teapot")}
+	return "", "", &AuthErr{418, errors.New("you are a teapot")}
 }
 
-// ContextValue returns the value to store in Gin's context at ContextKey().
-func (m StrictSHA1Manager) ContextValue(access string) interface{} {
+// Authorize returns the value to store in Gin's context at ContextKey().
+// This is only called once the requested has been authorized to pursue,
+// so logging of success should happen here.
+func (m StrictSHA1Manager) Authorize(access string) interface{} {
 	if access == "my_access_key" {
 		return "All good with my access key!"
 	}
 	return "All good with any access key!"
-}
-
-// DataToSign returns a string representing the data which will be HMAC'd with the secret and used to check
-// authenticity of the request. This function is only called once all the parameters for the request are valid.
-func (m StrictSHA1Manager) DataToSign(req *http.Request) (string, *AuthErr) {
-	// In this example, we'll be implementing a similar signing method to the Amazon AWS REST one.
-	// We'll use the HTTP-Verb, the MD5 checksum of the Body, if any, and the Date header in ISO format.
-	// http://docs.aws.amazon.com/AmazonS3/latest/dev/RESTAuthentication.html
-	// Note: We are returning a variety of error codes which don't follow the spec only for the purpose of testing.
-	serializedData := req.Method + "\n"
-	if req.ContentLength != 0 {
-		body, err := ioutil.ReadAll(req.Body)
-		if err != nil {
-			return "", &AuthErr{402, errors.New("could not read the body")}
-		}
-		hash := md5.New()
-		hash.Write(body)
-		serializedData += hex.EncodeToString(hash.Sum(nil)) + "\n"
-	} else {
-		serializedData += "\n"
-	}
-	// We know from Authorize that the Date header is present and fits our time constaints.
-	serializedData += req.Header.Get("Date")
-
-	return serializedData, nil
 }
 
 // EmptyManager is an example definition of an AuthKeyManager struct.
@@ -91,9 +89,9 @@ type EmptyManager struct {
 }
 
 // Authorize returns the secret key from the provided access key.
-func (m EmptyManager) Authorize(access string, req *http.Request) (secret string, err *AuthErr) {
-	fmt.Println("Yep")
-	secret = "" // There is no secret key, just an access key.
+func (m EmptyManager) CheckHeader(access string, req *http.Request) (secret string, dataToSign string, err *AuthErr) {
+	secret = ""     // There is no secret key, just an access key.
+	dataToSign = "" // There is no data to sign in Token auth.
 	if access == "valid" {
 		err = nil
 	} else {
@@ -103,7 +101,7 @@ func (m EmptyManager) Authorize(access string, req *http.Request) (secret string
 }
 
 // ContextValue returns the value to store in Gin's context at ContextKey().
-func (m EmptyManager) ContextValue(access string) interface{} {
+func (m EmptyManager) Authorize(access string) interface{} {
 	return true
 }
 
@@ -113,18 +111,13 @@ type FailingManager struct {
 }
 
 // Authorize returns the secret key from the provided access key.
-func (m FailingManager) Authorize(access string, req *http.Request) (string, *AuthErr) {
-	return "", nil
+func (m FailingManager) CheckHeader(access string, req *http.Request) (string, string, *AuthErr) {
+	return "", "", &AuthErr{418, errors.New("teapot failing manager")}
 }
 
 // ContextValue returns the value to store in Gin's context at ContextKey().
-func (m FailingManager) ContextValue(access string) interface{} {
+func (m FailingManager) Authorize(access string) interface{} {
 	return false
-}
-
-// DataToSign returns an empty string. This allows us to test that we can only check for a valid access key.
-func (m FailingManager) DataToSign(req *http.Request) (string, *AuthErr) {
-	return "", &AuthErr{418, errors.New("teapot failing manager")}
 }
 
 // TestExtractAuthInfo tests the correct extraction of information from the headers.

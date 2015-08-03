@@ -4,7 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
-	"github.com/ChristopherRabotin/gin-contrib-signedauth"
+	"github.com/ChristopherRabotin/gin-contrib-headerauth"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -13,26 +13,26 @@ import (
 // SHA384Manager is an example definition of an Manager struct.
 type SHA384Manager struct {
 	Secret string
-	*signedauth.HMACManager
+	*headerauth.HMACManager
 }
 
 // CheckHeader returns the secret key and the data to sign from the provided access key.
 // Here should reside additional verifications on the header, or other parts of the request, if needed.
-func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, string, *signedauth.AuthErr) {
+func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, string, *headerauth.AuthErr) {
 	if req.ContentLength != 0 && req.Body == nil {
 		// Not sure whether net/http or Gin handles these kinds of fun situations.
-		return "", "", &signedauth.AuthErr{400, errors.New("received a forged packet")}
+		return "", "", &headerauth.AuthErr{400, errors.New("received a forged packet")}
 	}
 	// Grabbing the date and making sure it's in the correct format and is within fifteen minutes.
 	dateHeader := req.Header.Get("Date")
 	if dateHeader == "" {
-		return "", "", &signedauth.AuthErr{406, errors.New("no Date header provided")}
+		return "", "", &headerauth.AuthErr{406, errors.New("no Date header provided")}
 	}
 	date, derr := time.Parse("2006-01-02T15:04:05.000Z", dateHeader)
 	if derr != nil {
-		return "", "", &signedauth.AuthErr{408, errors.New("could not parse date")}
+		return "", "", &headerauth.AuthErr{408, errors.New("could not parse date")}
 	} else if time.Since(date) > time.Minute*15 {
-		return "", "", &signedauth.AuthErr{410, errors.New("request is too old")}
+		return "", "", &headerauth.AuthErr{410, errors.New("request is too old")}
 	}
 
 	// The headers look good, let's check the access key, and get the data to sign.
@@ -49,7 +49,7 @@ func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, st
 		if req.ContentLength != 0 {
 			body, err := ioutil.ReadAll(req.Body)
 			if err != nil {
-				return "", "", &signedauth.AuthErr{402, errors.New("could not read the body")}
+				return "", "", &headerauth.AuthErr{402, errors.New("could not read the body")}
 			}
 			hash := md5.New()
 			hash.Write(body)
@@ -62,7 +62,7 @@ func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, st
 
 		return m.Secret, serializedData, nil
 	}
-	return "", "", &signedauth.AuthErr{418, errors.New("you are a teapot")}
+	return "", "", &headerauth.AuthErr{418, errors.New("you are a teapot")}
 }
 
 // Authorize returns the value to store in Gin's context at ContextKey().

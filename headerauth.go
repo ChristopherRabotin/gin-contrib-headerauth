@@ -1,6 +1,6 @@
 // Package signedauth provides a Gin middleware for checking signed requests.
 // Signed requests is a good way to secure endpoint which may alter databases.
-package signedauth
+package headerauth
 
 import (
 	"crypto/hmac"
@@ -18,8 +18,8 @@ type AuthErr struct {
 	Err    error // The error associated to this failure.
 }
 
-// SignatureAuth is the middleware function. It must be called with a struct which implements the Manager interface.
-func SignatureAuth(m Manager) gin.HandlerFunc {
+// HeaderAuth is the middleware function. It must be called with a struct which implements the Manager interface.
+func HeaderAuth(m Manager) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		accesskey, signature, err := extractAuthInfo(m, c.Request.Header.Get(m.HeaderName()))

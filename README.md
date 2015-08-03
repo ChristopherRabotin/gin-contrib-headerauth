@@ -1,5 +1,5 @@
-# ChristopherRabotin/gin-contrib-signedauth
-[![Build Status](https://travis-ci.org/ChristopherRabotin/gin-contrib-signedauth.svg?branch=master)](https://travis-ci.org/ChristopherRabotin/gin-contrib-signedauth) [![Coverage Status](https://coveralls.io/repos/ChristopherRabotin/gin-contrib-signedauth/badge.svg?branch=master&service=github)](https://coveralls.io/github/ChristopherRabotin/gin-contrib-signedauth?branch=master)
+# ChristopherRabotin/gin-contrib-headerauth
+[![Build Status](https://travis-ci.org/ChristopherRabotin/gin-contrib-headerauth.svg?branch=master)](https://travis-ci.org/ChristopherRabotin/gin-contrib-headerauth) [![Coverage Status](https://coveralls.io/repos/ChristopherRabotin/gin-contrib-headerauth/badge.svg?branch=master&service=github)](https://coveralls.io/github/ChristopherRabotin/gin-contrib-headerauth?branch=master)
 # Purpose
 Allows to protect routes with a header authentication, with a HMAC signature validation or without it.
 
@@ -9,14 +9,14 @@ Quite customizable, including the following custom settings.
 * Authorization header prefix (e.g. SAUTH), cf `managers.Manager.HeaderPrefix`.
 * Access key to secret key logic, header validation and data extraction for HMAC signature (e.g. hardcoded strings, database connection, etc.), cf `managers.Manager.CheckHeader`.
 * Allow unsigned requests, so they can be intercepted by another middleware for example, cf. `managers.Manager.HeaderRequired`.
-* Context key and value which can be used in the rest of the calls, cf. `managers.Manager.ContextKey` and cf. `SignedAuthManager.Authorize`.
+* Context key and value which can be used in the rest of the calls, cf. `managers.Manager.ContextKey` and cf. `managers.Manager.Authorize`.
 * Allow access on token in header only (without signature verification), cf `managers.TokenManager`
 
 ## Performance
 Since we're using Gin, the performance is quite blazing fast. Running the full test suite takes about 0.05 seconds on a 2013 Intel core i5.
 
 # Examples
-Refer to the [tests](./signatureauth_test.go) and the [example](./example/) directory.
+Refer to the [tests](./headerauth_test.go) and the [example](./example/) directory.
 
 # Quick start
 ## Access key and secret authorization
@@ -59,7 +59,7 @@ minutes will be rejected.
 allowed if there is a dash before each uppercase letter (apart from the first letter of the header name): `AccessKey` is **invalid** but `Access-Key` is valid.
 
 For example, let's say that the header which will contain the access key and signature is `Authorization` and the prefix prior to the access key and signature is `SAUTH`.
-The prefix avoids conflict with other middlewares which read that same header. It also allows for support of several signedauth middleware on the same routes, but whose
+The prefix avoids conflict with other middlewares which read that same header. It also allows for support of several headerauth middleware on the same routes, but whose
 logic is different based on the protocol (one could imagine an update to the protocol while still having to support old clients, e.g. `SAUTH` and `SAUTH2`).
 
 Building on the example above, we will set the following headers:
@@ -80,7 +80,7 @@ type SHA384Manager struct {
 	// --> to your database connection or even not set it, and have all the database connection, querying, and friends
 	// --> performed in the `CheckHeader` function.
 	Secret string
-	*signedauth.HMACManager
+	*headerauth.HMACManager
 }
 ```
 
@@ -91,27 +91,27 @@ All this is done in the `CheckHeader(string, *http.Request) (string, string, *Au
 **Note:** it is good practice to have as little difference between error statuses throughout the verification process to avoid to play [Mastermind](https://en.wikipedia.org/wiki/Mastermind_%28board_game%29)
 with a potential attacker.
 
-**Note:** `signedauth.AuthErr` will call the Gin context function `AbortWithError`, which will only return the error code to the client without any error message. The error message is only visible
+**Note:** `headerauth.AuthErr` will call the Gin context function `AbortWithError`, which will only return the error code to the client without any error message. The error message is only visible
 in the server logs.
 
 ```go
  // CheckHeader returns the secret key and the data to sign from the provided access key.
 // Here should reside additional verifications on the header, or other parts of the request, if needed.
-func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, string, *signedauth.AuthErr) {
+func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, string, *headerauth.AuthErr) {
 	if req.ContentLength != 0 && req.Body == nil {
 		// Not sure whether net/http or Gin handles these kinds of fun situations.
-		return "", "", &signedauth.AuthErr{400, errors.New("received a forged packet")}
+		return "", "", &headerauth.AuthErr{400, errors.New("received a forged packet")}
 	}
 	// Grabbing the date and making sure it's in the correct format and is within fifteen minutes.
 	dateHeader := req.Header.Get("Date")
 	if dateHeader == "" {
-		return "", "", &signedauth.AuthErr{401, errors.New("no Date header provided")}
+		return "", "", &headerauth.AuthErr{401, errors.New("no Date header provided")}
 	}
 	date, derr := time.Parse("2006-01-02T15:04:05.000Z", dateHeader)
 	if derr != nil {
-		return "", "", &signedauth.AuthErr{401, errors.New("could not parse date")}
+		return "", "", &headerauth.AuthErr{401, errors.New("could not parse date")}
 	} else if time.Since(date) > time.Minute*15 {
-		return "", "", &signedauth.AuthErr{401, errors.New("request is too old")}
+		return "", "", &headerauth.AuthErr{401, errors.New("request is too old")}
 	}
 
 	// --> Here is where you would do a database call to check if the access key is valid
@@ -123,7 +123,7 @@ func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, st
 		if req.ContentLength != 0 {
 			body, err := ioutil.ReadAll(req.Body)
 			if err != nil {
-				return "", "", &signedauth.AuthErr{401, errors.New("could not read the body")}
+				return "", "", &headerauth.AuthErr{401, errors.New("could not read the body")}
 			}
 			hash := md5.New()
 			hash.Write(body)
@@ -136,7 +136,7 @@ func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, st
 
 		return m.Secret, serializedData, nil
 	}
-	return "", "", &signedauth.AuthErr{401, errors.New("invalid access key")}
+	return "", "", &headerauth.AuthErr{401, errors.New("invalid access key")}
 }
 ```
 
@@ -168,9 +168,9 @@ In the main Gin router, you must initialize and set this created auth manager.
 func main() {
 	// Setting the secret to "super-secret-password".
 	// Setting the header prefix to `SAUTH`, and the context key in Gin to be called `contextKey`.
-	mgr := SHA384Manager{"super-secret-password", signedauth.NewHMACSHA384Manager("SAUTH", "contextKey")}
+	mgr := SHA384Manager{"super-secret-password", headerauth.NewHMACSHA384Manager("SAUTH", "contextKey")}
 	router := gin.Default()
-	router.Use(signedauth.SignatureAuth(mgr))
+	router.Use(headerauth.SignatureAuth(mgr))
 	router.POST("/test/", func(c *gin.Context) {
 		c.String(http.StatusOK, "Success.")
 	})
@@ -201,7 +201,7 @@ It should be agreed what the headers should be. For example, we can expect the h
 ```go
 // TMgr is an example definition of an AuthKeyManager struct.
 type TMgr struct {
-	*signedauth.TokenManager
+	*headerauth.TokenManager
 }
 
 // Authorize returns the secret key from the provided access key.

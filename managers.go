@@ -1,4 +1,4 @@
-package signedauth
+package headerauth
 
 // Managers has some help definitions for creating auth managers.
 

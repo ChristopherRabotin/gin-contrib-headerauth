@@ -1,4 +1,4 @@
-package signedauth
+package headerauth
 
 import (
 	"bytes"
@@ -181,7 +181,7 @@ func TestMiddleware(t *testing.T) {
 	Convey("Given a strict manager", t, func() {
 		mgr := StrictSHAManager{"super-secret-password", NewHMACSHA1Manager("SAUTH", "contextKey")}
 		router := gin.Default()
-		router.Use(SignatureAuth(mgr))
+		router.Use(HeaderAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 		for _, meth := range methods {
 			router.Handle(meth, "/HMACtest/", []gin.HandlerFunc{func(c *gin.Context) {
@@ -329,7 +329,7 @@ func TestMiddleware(t *testing.T) {
 		mgr := StrictSHAManager{"super-secret-password", NewHMACSHA1Manager("SAUTH", "contextKey")}
 		mgr.Required = false
 		router := gin.Default()
-		router.Use(SignatureAuth(mgr))
+		router.Use(HeaderAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 		for _, meth := range methods {
 			router.Handle(meth, "/notRequiredTest/", []gin.HandlerFunc{func(c *gin.Context) {
@@ -351,7 +351,7 @@ func TestMiddleware(t *testing.T) {
 	Convey("Given an access key only manager", t, func() {
 		mgr := EmptyManager{NewTokenManager("Access-Key", "Token", "cKey")}
 		router := gin.Default()
-		router.Use(SignatureAuth(mgr))
+		router.Use(HeaderAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 		for _, meth := range methods {
 			router.Handle(meth, "/tokenTest/", []gin.HandlerFunc{func(c *gin.Context) {
@@ -402,7 +402,7 @@ func TestMiddleware(t *testing.T) {
 	Convey("Given a failing manager", t, func() {
 		mgr := FailingManager{NewHMACSHA1Manager("FAIL", "allGood")}
 		router := gin.Default()
-		router.Use(SignatureAuth(mgr))
+		router.Use(HeaderAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 		for _, meth := range methods {
 			router.Handle(meth, "/failTest/", []gin.HandlerFunc{func(c *gin.Context) {

@@ -88,7 +88,7 @@ type EmptyManager struct {
 	*TokenManager
 }
 
-// Authorize returns the secret key from the provided access key.
+// CheckHeader returns the secret key from the provided access key.
 func (m EmptyManager) CheckHeader(access string, req *http.Request) (secret string, dataToSign string, err *AuthErr) {
 	secret = ""     // There is no secret key, just an access key.
 	dataToSign = "" // There is no data to sign in Token auth.
@@ -100,7 +100,7 @@ func (m EmptyManager) CheckHeader(access string, req *http.Request) (secret stri
 	return
 }
 
-// ContextValue returns the value to store in Gin's context at ContextKey().
+// Authorize returns the value to store in Gin's context at ContextKey().
 func (m EmptyManager) Authorize(access string) interface{} {
 	return true
 }

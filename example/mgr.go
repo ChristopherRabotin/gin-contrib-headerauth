@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// SHA384Manager is an example definition of an AuthKeyManager struct.
+// SHA384Manager is an example definition of an Manager struct.
 type SHA384Manager struct {
 	Secret string
 	*signedauth.HMACManager

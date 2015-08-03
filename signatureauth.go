@@ -76,5 +76,8 @@ func extractAuthInfo(mgr Manager, auth string) (string, string, *Error) {
 func isSignatureValid(hashFunc func() hash.Hash, secret string, data string, signature string) bool {
 	hash := hmac.New(hashFunc, []byte(secret))
 	hash.Write([]byte(data))
-	return hex.EncodeToString(hash.Sum(nil)) == signature
+	if messageMAC, err := hex.DecodeString(signature); err == nil {
+		return hmac.Equal(hash.Sum(nil), messageMAC)
+	}
+	return false
 }

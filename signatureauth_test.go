@@ -424,6 +424,19 @@ func TestMiddleware(t *testing.T) {
 				})
 			}
 		})
+
+		Convey("When the access key is missing.", func() {
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					headers["Authorization"] = []string{""}
+					req := performRequest(router, meth, "/test/", headers, nil)
+					Convey("the middleware should respond 401.", func() {
+						So(req.Code, ShouldEqual, 401)
+					})
+				})
+			}
+		})
 	})
 
 	Convey("Given a failing manager", t, func() {

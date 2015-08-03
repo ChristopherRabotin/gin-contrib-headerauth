@@ -10,15 +10,15 @@ import (
 	"time"
 )
 
-// StrictSHA1Manager is an example definition of an AuthKeyManager struct.
-type StrictSHA1Manager struct {
+// SHA384Manager is an example definition of an AuthKeyManager struct.
+type SHA384Manager struct {
 	Secret string
 	*signedauth.HMACManager
 }
 
 // CheckHeader returns the secret key and the data to sign from the provided access key.
 // Here should reside additional verifications on the header, or other parts of the request, if needed.
-func (m StrictSHA1Manager) CheckHeader(access string, req *http.Request) (string, string, *signedauth.AuthErr) {
+func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, string, *signedauth.AuthErr) {
 	if req.ContentLength != 0 && req.Body == nil {
 		// Not sure whether net/http or Gin handles these kinds of fun situations.
 		return "", "", &signedauth.AuthErr{400, errors.New("received a forged packet")}
@@ -68,7 +68,7 @@ func (m StrictSHA1Manager) CheckHeader(access string, req *http.Request) (string
 // Authorize returns the value to store in Gin's context at ContextKey().
 // This is only called once the requested has been authorized to pursue,
 // so logging of success should happen here.
-func (m StrictSHA1Manager) Authorize(access string) interface{} {
+func (m SHA384Manager) Authorize(access string) interface{} {
 	if access == "my_access_key" {
 		return "All good with my access key!"
 	}

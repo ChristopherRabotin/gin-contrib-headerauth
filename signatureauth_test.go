@@ -18,15 +18,15 @@ import (
 	"time"
 )
 
-// StrictSHA1Manager is an example definition of an AuthKeyManager struct.
-type StrictSHA1Manager struct {
+// StrictSHAManager is an example definition of an AuthKeyManager struct.
+type StrictSHAManager struct {
 	Secret string
 	*HMACManager
 }
 
 // CheckHeader returns the secret key and the data to sign from the provided access key.
 // Here should reside additional verifications on the header, or other parts of the request, if needed.
-func (m StrictSHA1Manager) CheckHeader(access string, req *http.Request) (string, string, *AuthErr) {
+func (m StrictSHAManager) CheckHeader(access string, req *http.Request) (string, string, *AuthErr) {
 	if req.ContentLength != 0 && req.Body == nil {
 		// Not sure whether net/http or Gin handles these kinds of fun situations.
 		return "", "", &AuthErr{400, errors.New("received a forged packet")}
@@ -76,7 +76,7 @@ func (m StrictSHA1Manager) CheckHeader(access string, req *http.Request) (string
 // Authorize returns the value to store in Gin's context at ContextKey().
 // This is only called once the requested has been authorized to pursue,
 // so logging of success should happen here.
-func (m StrictSHA1Manager) Authorize(access string) interface{} {
+func (m StrictSHAManager) Authorize(access string) interface{} {
 	if access == "my_access_key" {
 		return "All good with my access key!"
 	}
@@ -124,7 +124,7 @@ func (m FailingManager) Authorize(access string) interface{} {
 func TestExtractAuthInfo(t *testing.T) {
 	// https://github.com/smartystreets/goconvey/wiki#get-going-in-25-seconds
 	Convey("Given a static manager with prefix SAUTH", t, func() {
-		mgr := StrictSHA1Manager{"super-secret-password", NewHMACSHA1Manager("SAUTH", "contextKey")}
+		mgr := StrictSHAManager{"super-secret-password", NewHMACSHA384Manager("SAUTH", "contextKey")}
 
 		Convey("When the header has an incorrect prefix", func() {
 			accesskey, signature, err := extractAuthInfo(mgr, "INCORRECT Something:ThereWasASpace")
@@ -179,7 +179,7 @@ func TestExtractAuthInfo(t *testing.T) {
 func TestMiddleware(t *testing.T) {
 
 	Convey("Given a strict manager", t, func() {
-		mgr := StrictSHA1Manager{"super-secret-password", NewHMACSHA1Manager("SAUTH", "contextKey")}
+		mgr := StrictSHAManager{"super-secret-password", NewHMACSHA1Manager("SAUTH", "contextKey")}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
@@ -326,7 +326,7 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	Convey("Given a non required manager", t, func() {
-		mgr := StrictSHA1Manager{"super-secret-password", NewHMACSHA1Manager("SAUTH", "contextKey")}
+		mgr := StrictSHAManager{"super-secret-password", NewHMACSHA1Manager("SAUTH", "contextKey")}
 		mgr.Required = false
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))

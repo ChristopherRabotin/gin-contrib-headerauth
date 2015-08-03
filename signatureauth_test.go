@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	. "github.com/smartystreets/goconvey/convey"
-	"hash"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -19,185 +18,113 @@ import (
 	"time"
 )
 
-// StrictSHA1Manager is an example definition of an AuthKeyManager struct.
-type StrictSHA1Manager struct {
-	Required bool
-	Prefix   string
-	Secret   string
-	Key      string
-	Value    interface{}
+// StrictSHAManager is an example definition of an AuthKeyManager struct.
+type StrictSHAManager struct {
+	Secret string
+	*HMACManager
 }
 
-// AuthHeaderPrefix returns the prefix used in the initialization.
-func (mgr StrictSHA1Manager) AuthHeaderPrefix() string {
-	return mgr.Prefix
-}
-
-// SecretKey returns the secret key from the provided access key.
+// CheckHeader returns the secret key and the data to sign from the provided access key.
 // Here should reside additional verifications on the header, or other parts of the request, if needed.
-func (mgr StrictSHA1Manager) SecretKey(access string, req *http.Request) (string, *Error) {
+func (m StrictSHAManager) CheckHeader(access string, req *http.Request) (string, string, *AuthErr) {
 	if req.ContentLength != 0 && req.Body == nil {
 		// Not sure whether net/http or Gin handles these kinds of fun situations.
-		return "", &Error{400, errors.New("received a forged packet")}
+		return "", "", &AuthErr{400, errors.New("received a forged packet")}
 	}
 	// Grabbing the date and making sure it's in the correct format and is within fifteen minutes.
 	dateHeader := req.Header.Get("Date")
 	if dateHeader == "" {
-		return "", &Error{406, errors.New("no Date header provided")}
+		return "", "", &AuthErr{406, errors.New("no Date header provided")}
 	}
 	date, derr := time.Parse("2006-01-02T15:04:05.000Z", dateHeader)
 	if derr != nil {
-		return "", &Error{408, errors.New("could not parse date")}
+		return "", "", &AuthErr{408, errors.New("could not parse date")}
 	} else if time.Since(date) > time.Minute*15 {
-		return "", &Error{410, errors.New("request is too old")}
+		return "", "", &AuthErr{410, errors.New("request is too old")}
 	}
 
-	// The headers look good, let's check the access key.
+	// The headers look good, let's check the access key, and get the data to sign.
+	// The data to sign is a string representing the data which will be HMAC'd with
+	// the secret and used to check authenticity of the request.
 	// If the reading the access key requires any kind of IO (database, or file reading, etc.)
 	// it's quite good to only verify if that access key is valid once all the checks are done.
 	if access == "my_access_key" {
-		return mgr.Secret, nil
+		// In this example, we'll be implementing a *similar* signing method to the Amazon AWS REST one.
+		// We'll use the HTTP-Verb, the MD5 checksum of the Body, if any, and the Date header in ISO format.
+		// http://docs.aws.amazon.com/AmazonS3/latest/dev/RESTAuthentication.html
+		// Note: We are returning a variety of error codes which don't follow the spec only for the purpose of testing.
+		serializedData := req.Method + "\n"
+		if req.ContentLength != 0 {
+			body, err := ioutil.ReadAll(req.Body)
+			if err != nil {
+				return "", "", &AuthErr{402, errors.New("could not read the body")}
+			}
+			hash := md5.New()
+			hash.Write(body)
+			serializedData += hex.EncodeToString(hash.Sum(nil)) + "\n"
+		} else {
+			serializedData += "\n"
+		}
+		// We know from Authorize that the Date header is present and fits our time constaints.
+		serializedData += req.Header.Get("Date")
+
+		return m.Secret, serializedData, nil
 	}
-	return "", &Error{418, errors.New("you are a teapot")}
+	return "", "", &AuthErr{418, errors.New("you are a teapot")}
 }
 
-// ContextKey returns the key which will store the return from ContextValue() in Gin's context.
-func (mgr StrictSHA1Manager) ContextKey() string {
-	return mgr.Key
-}
-
-// ContextValue returns the value to store in Gin's context at ContextKey().
-func (mgr StrictSHA1Manager) ContextValue(access string) interface{} {
+// Authorize returns the value to store in Gin's context at ContextKey().
+// This is only called once the requested has been authorized to pursue,
+// so logging of success should happen here.
+func (m StrictSHAManager) Authorize(access string) interface{} {
 	if access == "my_access_key" {
 		return "All good with my access key!"
 	}
 	return "All good with any access key!"
 }
 
-// AuthHeaderRequired returns true because we want to forbid any non-signed request in this group.
-func (mgr StrictSHA1Manager) AuthHeaderRequired() bool {
-	return mgr.Required
-}
-
-// HashFunction returns sha1.New. It could return sha512.New384 for example (SHA-1 has known theoretical attacks).
-func (mgr StrictSHA1Manager) HashFunction() func() hash.Hash {
-	return sha1.New
-}
-
-// DataToSign returns a string representing the data which will be HMAC'd with the secret and used to check
-// authenticity of the request. This function is only called once all the parameters for the request are valid.
-func (mgr StrictSHA1Manager) DataToSign(req *http.Request) (string, *Error) {
-	// In this example, we'll be implementing a similar signing method to the Amazon AWS REST one.
-	// We'll use the HTTP-Verb, the MD5 checksum of the Body, if any, and the Date header in ISO format.
-	// http://docs.aws.amazon.com/AmazonS3/latest/dev/RESTAuthentication.html
-	// Note: We are returning a variety of error codes which don't follow the spec only for the purpose of testing.
-	serializedData := req.Method + "\n"
-	if req.ContentLength != 0 {
-		body, err := ioutil.ReadAll(req.Body)
-		if err != nil {
-			return "", &Error{402, errors.New("could not read the body")}
-		}
-		hash := md5.New()
-		hash.Write(body)
-		serializedData += hex.EncodeToString(hash.Sum(nil)) + "\n"
-	} else {
-		serializedData += "\n"
-	}
-	// We know from SecretKey that the Date header is present and fits our time constaints.
-	serializedData += req.Header.Get("Date")
-
-	return serializedData, nil
-}
-
 // EmptyManager is an example definition of an AuthKeyManager struct.
 type EmptyManager struct {
+	*TokenManager
 }
 
-// EmptyManager returns the prefix used in the initialization.
-func (mgr EmptyManager) AuthHeaderPrefix() string {
-	return "EMPTY"
-}
-
-// SecretKey returns the secret key from the provided access key.
-func (mgr EmptyManager) SecretKey(access string, req *http.Request) (secret string, err *Error) {
-	secret = "" // There is no secret key, just an access key.
+// CheckHeader returns the secret key from the provided access key.
+func (m EmptyManager) CheckHeader(access string, req *http.Request) (secret string, dataToSign string, err *AuthErr) {
+	secret = ""     // There is no secret key, just an access key.
+	dataToSign = "" // There is no data to sign in Token auth.
 	if access == "valid" {
 		err = nil
 	} else {
-		err = &Error{403, errors.New("invalid access key")}
+		err = &AuthErr{403, errors.New("invalid access key")}
 	}
 	return
 }
 
-// ContextKey returns the key which will store the return from ContextValue() in Gin's context.
-func (mgr EmptyManager) ContextKey() string {
-	return "allGood"
-}
-
-// ContextValue returns the value to store in Gin's context at ContextKey().
-func (mgr EmptyManager) ContextValue(access string) interface{} {
+// Authorize returns the value to store in Gin's context at ContextKey().
+func (m EmptyManager) Authorize(access string) interface{} {
 	return true
-}
-
-// AuthHeaderRequired returns true because we want to forbid any non-signed request in this group.
-func (mgr EmptyManager) AuthHeaderRequired() bool {
-	return true
-}
-
-// HashFunction returns sha1.New.
-func (mgr EmptyManager) HashFunction() func() hash.Hash {
-	return sha1.New
-}
-
-// DataToSign returns an empty string. This allows us to test that we can only check for a valid access key.
-func (mgr EmptyManager) DataToSign(req *http.Request) (string, *Error) {
-	return "", nil
 }
 
 // FailingManager is an example definition of an AuthKeyManager struct.
 type FailingManager struct {
+	*HMACManager
 }
 
-// FailingManager returns the prefix used in the initialization.
-func (mgr FailingManager) AuthHeaderPrefix() string {
-	return "FAIL"
-}
-
-// SecretKey returns the secret key from the provided access key.
-func (mgr FailingManager) SecretKey(access string, req *http.Request) (string, *Error) {
-	return "", nil
-}
-
-// ContextKey returns the key which will store the return from ContextValue() in Gin's context.
-func (mgr FailingManager) ContextKey() string {
-	return "allGood"
+// Authorize returns the secret key from the provided access key.
+func (m FailingManager) CheckHeader(access string, req *http.Request) (string, string, *AuthErr) {
+	return "", "", &AuthErr{418, errors.New("teapot failing manager")}
 }
 
 // ContextValue returns the value to store in Gin's context at ContextKey().
-func (mgr FailingManager) ContextValue(access string) interface{} {
+func (m FailingManager) Authorize(access string) interface{} {
 	return false
-}
-
-// AuthHeaderRequired returns true because we want to forbid any non-signed request in this group.
-func (mgr FailingManager) AuthHeaderRequired() bool {
-	return true
-}
-
-// HashFunction returns sha1.New.
-func (mgr FailingManager) HashFunction() func() hash.Hash {
-	return sha1.New
-}
-
-// DataToSign returns an empty string. This allows us to test that we can only check for a valid access key.
-func (mgr FailingManager) DataToSign(req *http.Request) (string, *Error) {
-	return "", &Error{418, errors.New("teapot failing manager")}
 }
 
 // TestExtractAuthInfo tests the correct extraction of information from the headers.
 func TestExtractAuthInfo(t *testing.T) {
 	// https://github.com/smartystreets/goconvey/wiki#get-going-in-25-seconds
 	Convey("Given a static manager with prefix SAUTH", t, func() {
-		mgr := StrictSHA1Manager{Prefix: "SAUTH", Key: "contextKey", Secret: "super-secret-password", Value: nil, Required: true}
+		mgr := StrictSHAManager{"super-secret-password", NewHMACSHA384Manager("SAUTH", "contextKey")}
 
 		Convey("When the header has an incorrect prefix", func() {
 			accesskey, signature, err := extractAuthInfo(mgr, "INCORRECT Something:ThereWasASpace")
@@ -252,19 +179,19 @@ func TestExtractAuthInfo(t *testing.T) {
 func TestMiddleware(t *testing.T) {
 
 	Convey("Given a strict manager", t, func() {
-		mgr := StrictSHA1Manager{Prefix: "SAUTH", Key: "contextKey", Secret: "super-secret-password", Value: nil, Required: true}
+		mgr := StrictSHAManager{"super-secret-password", NewHMACSHA1Manager("SAUTH", "contextKey")}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 		for _, meth := range methods {
-			router.Handle(meth, "/test/", []gin.HandlerFunc{func(c *gin.Context) {
+			router.Handle(meth, "/HMACtest/", []gin.HandlerFunc{func(c *gin.Context) {
 				c.String(http.StatusOK, "Success.")
 			}}[0])
 		}
 		Convey("When there is no header", func() {
 			for _, meth := range methods {
 				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-					req := performRequest(router, meth, "/test/", nil, nil)
+					req := performRequest(router, meth, "/HMACtest/", nil, nil)
 					Convey("the middleware should respond forbidden", func() {
 						So(req.Code, ShouldEqual, 401)
 					})
@@ -277,7 +204,7 @@ func TestMiddleware(t *testing.T) {
 			headers["Authorization"] = []string{"INCORRECT Something:ThereWasASpace"}
 			for _, meth := range methods {
 				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-					req := performRequest(router, meth, "/test/", headers, nil)
+					req := performRequest(router, meth, "/HMACtest/", headers, nil)
 					Convey("the middleware should respond unauthorized", func() {
 						So(req.Code, ShouldEqual, 401)
 					})
@@ -291,7 +218,7 @@ func TestMiddleware(t *testing.T) {
 			headers["Date"] = []string{time.Now().Format("2006-01-02T15:04:05.000Z")}
 			for _, meth := range methods {
 				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-					req := performRequest(router, meth, "/test/", headers, nil)
+					req := performRequest(router, meth, "/HMACtest/", headers, nil)
 					Convey("the middleware should respond with the Manager's secret key provided status.", func() {
 						So(req.Code, ShouldEqual, 418)
 					})
@@ -306,7 +233,7 @@ func TestMiddleware(t *testing.T) {
 			Convey("And missing the Date header", func() {
 				for _, meth := range methods {
 					Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-						req := performRequest(router, meth, "/test/", headers, nil)
+						req := performRequest(router, meth, "/HMACtest/", headers, nil)
 						Convey("the middleware should respond as requested by the manager.", func() {
 							So(req.Code, ShouldEqual, 406)
 						})
@@ -318,7 +245,7 @@ func TestMiddleware(t *testing.T) {
 				headers["Date"] = []string{time.Now().Format("01/02 03 04 05 06")}
 				for _, meth := range methods {
 					Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-						req := performRequest(router, meth, "/test/", headers, nil)
+						req := performRequest(router, meth, "/HMACtest/", headers, nil)
 						Convey("the middleware should respond as requested by the manager.", func() {
 							So(req.Code, ShouldEqual, 408)
 						})
@@ -332,7 +259,7 @@ func TestMiddleware(t *testing.T) {
 				headers["Date"] = []string{oldDate.Format("2006-01-02T15:04:05.000Z")}
 				for _, meth := range methods {
 					Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-						req := performRequest(router, meth, "/test/", headers, nil)
+						req := performRequest(router, meth, "/HMACtest/", headers, nil)
 						Convey("the middleware should respond as requested by the manager.", func() {
 							So(req.Code, ShouldEqual, 410)
 						})
@@ -344,7 +271,7 @@ func TestMiddleware(t *testing.T) {
 				headers["Date"] = []string{time.Now().Format("2006-01-02T15:04:05.000Z")}
 				for _, meth := range methods {
 					Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-						req := performRequest(router, meth, "/test/", headers, nil)
+						req := performRequest(router, meth, "/HMACtest/", headers, nil)
 						Convey("the middleware should respond unauthorized.", func() {
 							So(req.Code, ShouldEqual, 401)
 						})
@@ -365,7 +292,7 @@ func TestMiddleware(t *testing.T) {
 					hash.Write([]byte(sigData))
 					signature := hex.EncodeToString(hash.Sum(nil))
 					headers["Authorization"] = []string{"SAUTH my_access_key:" + signature}
-					req := performRequest(router, meth, "/test/", headers, nil)
+					req := performRequest(router, meth, "/HMACtest/", headers, nil)
 					Convey("the middleware should respond 200 OK.", func() {
 						So(req.Code, ShouldEqual, 200)
 					})
@@ -388,7 +315,7 @@ func TestMiddleware(t *testing.T) {
 					hash.Write([]byte(sigData))
 					signature := hex.EncodeToString(hash.Sum(nil))
 					headers["Authorization"] = []string{"SAUTH my_access_key:" + signature}
-					req := performRequest(router, meth, "/test/", headers, bytes.NewBufferString(body))
+					req := performRequest(router, meth, "/HMACtest/", headers, bytes.NewBufferString(body))
 					Convey("the middleware should respond 200 OK.", func() {
 						So(req.Code, ShouldEqual, 200)
 					})
@@ -399,19 +326,20 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	Convey("Given a non required manager", t, func() {
-		mgr := StrictSHA1Manager{Prefix: "SAUTH", Key: "contextKey", Secret: "super-secret-password", Value: nil, Required: false}
+		mgr := StrictSHAManager{"super-secret-password", NewHMACSHA1Manager("SAUTH", "contextKey")}
+		mgr.Required = false
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 		for _, meth := range methods {
-			router.Handle(meth, "/test/", []gin.HandlerFunc{func(c *gin.Context) {
+			router.Handle(meth, "/notRequiredTest/", []gin.HandlerFunc{func(c *gin.Context) {
 				c.String(http.StatusOK, "Success.")
 			}}[0])
 		}
 
 		for _, meth := range methods {
 			Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-				req := performRequest(router, meth, "/test/", nil, nil)
+				req := performRequest(router, meth, "/notRequiredTest/", nil, nil)
 				Convey("the middleware should respond success", func() {
 					So(req.Code, ShouldEqual, 200)
 				})
@@ -421,12 +349,12 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	Convey("Given an access key only manager", t, func() {
-		mgr := EmptyManager{}
+		mgr := EmptyManager{NewTokenManager("Access-Key", "Token", "cKey")}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 		for _, meth := range methods {
-			router.Handle(meth, "/test/", []gin.HandlerFunc{func(c *gin.Context) {
+			router.Handle(meth, "/tokenTest/", []gin.HandlerFunc{func(c *gin.Context) {
 				c.String(http.StatusOK, "Success.")
 			}}[0])
 		}
@@ -435,11 +363,8 @@ func TestMiddleware(t *testing.T) {
 			headers := make(map[string][]string)
 			for _, meth := range methods {
 				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-					hash := hmac.New(sha1.New, []byte(""))
-					hash.Write([]byte(""))
-					signature := hex.EncodeToString(hash.Sum(nil))
-					headers["Authorization"] = []string{"EMPTY valid:" + signature}
-					req := performRequest(router, meth, "/test/", headers, nil)
+					headers["Access-Key"] = []string{"Token valid"}
+					req := performRequest(router, meth, "/tokenTest/", headers, nil)
 					Convey("the middleware should respond 200 OK.", func() {
 						So(req.Code, ShouldEqual, 200)
 					})
@@ -451,13 +376,23 @@ func TestMiddleware(t *testing.T) {
 			headers := make(map[string][]string)
 			for _, meth := range methods {
 				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
-					hash := hmac.New(sha1.New, []byte(""))
-					hash.Write([]byte(""))
-					signature := hex.EncodeToString(hash.Sum(nil))
-					headers["Authorization"] = []string{"EMPTY invalid:" + signature}
-					req := performRequest(router, meth, "/test/", headers, nil)
+					headers["Access-Key"] = []string{"Token invalid"}
+					req := performRequest(router, meth, "/tokenTest/", headers, nil)
 					Convey("the middleware should respond 403.", func() {
 						So(req.Code, ShouldEqual, 403)
+					})
+				})
+			}
+		})
+
+		Convey("When the access key is missing.", func() {
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					headers["AccessKey"] = []string{""}
+					req := performRequest(router, meth, "/tokenTest/", headers, nil)
+					Convey("the middleware should respond 401.", func() {
+						So(req.Code, ShouldEqual, 401)
 					})
 				})
 			}
@@ -465,12 +400,12 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	Convey("Given a failing manager", t, func() {
-		mgr := FailingManager{}
+		mgr := FailingManager{NewHMACSHA1Manager("FAIL", "allGood")}
 		router := gin.Default()
 		router.Use(SignatureAuth(mgr))
 		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 		for _, meth := range methods {
-			router.Handle(meth, "/test/", []gin.HandlerFunc{func(c *gin.Context) {
+			router.Handle(meth, "/failTest/", []gin.HandlerFunc{func(c *gin.Context) {
 				c.String(http.StatusOK, "Success.")
 			}}[0])
 		}
@@ -483,7 +418,7 @@ func TestMiddleware(t *testing.T) {
 					hash.Write([]byte(""))
 					signature := hex.EncodeToString(hash.Sum(nil))
 					headers["Authorization"] = []string{"FAIL valid:" + signature}
-					req := performRequest(router, meth, "/test/", headers, nil)
+					req := performRequest(router, meth, "/failTest/", headers, nil)
 					Convey("the middleware should respond 418 Teapot.", func() {
 						So(req.Code, ShouldEqual, 418)
 					})

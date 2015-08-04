@@ -22,12 +22,12 @@ Refer to the [tests](./headerauth_test.go) and the [example](./example/) directo
 
 # Quick start
 ## Table of Contents
-+ [Access key and secret key authentication](./#access-key-and-secret-authorization)
-	+ [Code](./#code)
-+ [Token authentication](./#token-based-authorization)
-	+ [Code](./#code-1)
-+ [HTTP Basic authentication](./#http-basic-authentication)
-	+ [Code](./#code-2)
++ [Access key and secret key authentication](./README.md#access-key-and-secret-authorization)
+	+ [Code](./README.md#code)
++ [Token authentication](./README.md#token-based-authorization)
+	+ [Code](./README.md#code-1)
++ [HTTP Basic authentication](./README.md#http-basic-authentication)
+	+ [Code](./README.md#code-2)
 
 ## Access key and secret authorization
 ### Usage example

@@ -10,7 +10,9 @@ Quite customizable, including the following custom settings.
 * Access key to secret key logic, header validation and data extraction for HMAC signature (e.g. hardcoded strings, database connection, etc.), cf `managers.Manager.CheckHeader`.
 * Allow unsigned requests, so they can be intercepted by another middleware for example, cf. `managers.Manager.HeaderRequired`.
 * Context key and value which can be used in the rest of the calls, cf. `managers.Manager.ContextKey` and cf. `managers.Manager.Authorize`.
-* Allow access on token in header only (without signature verification), cf `managers.TokenManager`
+* Custom functions prior to an authentication failure (`managers.Manager.PreAbort`) and post success (`managers.Manager.PostAuth`).
+* Allow access on token in header only (without signature verification), cf `managers.TokenManager`.
+* Allow access HTTP Basic Auth , cf `managers.HTTPBasicAuth` and the [HTTP Basic Auth example](./example/httpbasicauth/).
 
 ## Performance
 Since we're using Gin, the performance is quite blazing fast. Running the full test suite takes about 0.05 seconds on a 2013 Intel core i5.

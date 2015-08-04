@@ -25,7 +25,7 @@ type StrictSHAManager struct {
 	*HMACManager
 }
 
-// CheckHeader returns the secret key and the data to sign from the provided access key.
+// CheckHeader returns an error if something is wrong with the header, or the auth fails (if it can fail here).
 // Here should reside additional verifications on the header, or other parts of the request, if needed.
 func (m StrictSHAManager) CheckHeader(auth *AuthInfo, req *http.Request) (err *AuthErr) {
 	if req.ContentLength != 0 && req.Body == nil {
@@ -76,8 +76,8 @@ func (m StrictSHAManager) CheckHeader(auth *AuthInfo, req *http.Request) (err *A
 	return &AuthErr{418, errors.New("you are a teapot")}
 }
 
-// Authorize returns the value to store in Gin's context at ContextKey().
-// This is only called once the requested has been authorized to pursue,
+// Authorize returns the value to store in Gin's context at ContextKey(), or an error if the auth fails.
+// This is only called once the requested has been authorized to pursue, i.e. access key and signature are valid,
 // so logging of success should happen here.
 func (m StrictSHAManager) Authorize(auth *AuthInfo) (val interface{}, err *AuthErr) {
 	if auth.AccessKey == "my_access_key" {
@@ -92,7 +92,7 @@ type EmptyManager struct {
 	*TokenManager
 }
 
-// CheckHeader returns the secret key from the provided access key.
+// CheckHeader returns an error if the header(s) are not as per protocol.
 func (m EmptyManager) CheckHeader(auth *AuthInfo, req *http.Request) (err *AuthErr) {
 	auth.Secret = ""     // There is no secret key, just an access key.
 	auth.DataToSign = "" // There is no data to sign in Token auth.
@@ -102,7 +102,7 @@ func (m EmptyManager) CheckHeader(auth *AuthInfo, req *http.Request) (err *AuthE
 	return
 }
 
-// Authorize returns the value to store in Gin's context at ContextKey().
+// Authorize returns the value to store in Gin's context at ContextKey(), or an error.
 func (m EmptyManager) Authorize(auth *AuthInfo) (val interface{}, err *AuthErr) {
 	return true, nil
 }
@@ -132,6 +132,7 @@ func (m FailingManager) Authorize(auth *AuthInfo) (val interface{}, err *AuthErr
 	return false, nil
 }
 
+// HTTPBasicDemo is an example of an HTTP Basic Auth.
 type HTTPBasicDemo struct {
 	Accounts map[string]string
 	*HTTPBasicAuth

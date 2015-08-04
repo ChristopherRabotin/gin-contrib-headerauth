@@ -140,16 +140,16 @@ func NewTokenManager(hdrName string, prefix string, contextKey string) *TokenMan
 // There is no signature to be computed nor a separator, so it's effectively a Token based auth.
 // Whether the username and password are correct happen in the Authorize function.
 type HTTPBasicAuth struct {
-	Realm string
+	Realm string // The Realm returned for custom authentication name.
 	*TokenManager
 }
 
-// HTTPBasicAuth has a Basic prefix, as per RFC.
+// HeaderPrefix is set to "Basic" as per RFC for HTTP Basic Auth.
 func (m HTTPBasicAuth) HeaderPrefix() string {
 	return "Basic"
 }
 
-// HTTPBasicAuth has the auth string in the Authorization header, as per RFC.
+// HeaderName returns Authorization, as per RFC for HTTP Basic Auth.
 func (m HTTPBasicAuth) HeaderName() string {
 	return "Authorization"
 }

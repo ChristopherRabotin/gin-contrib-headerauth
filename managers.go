@@ -5,7 +5,7 @@ package headerauth
 import (
 	"crypto/sha1"
 	"crypto/sha512"
-	//"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"hash"
 	"net/http"
 )
@@ -20,8 +20,8 @@ type Manager interface {
 	HeaderPrefix() string                          // The beginning of the string from the HTTP_AUTHORIZATION header. The exact header must be followed by a space.
 	HeaderRequired() bool                          // Whether or not a request without any header should be accepted (c.Next) or forbidden (c.AbortWithError with status 403).
 	HeaderSeparator() (bool, string)               // Whether there is a separator between the access key and signature, and what that separator is.
-	//PreAbort(*gin.Context, *AuthInfo, *AuthErr)    // Called just prior to aborting the request.
-	//PostAuth(*gin.Context, *AuthInfo, *AuthErr)    // Called right after auth, i.e prior to calling context.Next()
+	PreAbort(*gin.Context, *AuthInfo, *AuthErr)    // Called just prior to aborting the request.
+	PostAuth(*gin.Context, *AuthInfo, *AuthErr)    // Called right after auth, i.e prior to calling context.Next()
 }
 
 // HMACManager is a partial implementation of Manager which helps in defining an HMAC manager.
@@ -61,6 +61,12 @@ func (m HMACManager) ContextKey() string {
 func (m HMACManager) HashFunction() func() hash.Hash {
 	return m.Hash
 }
+
+// PreAbort defaults to NO-OP.
+func (m HMACManager) PreAbort(*gin.Context, *AuthInfo, *AuthErr) {}
+
+// PostAuth defaults to NO-OP.
+func (m HMACManager) PostAuth(*gin.Context, *AuthInfo, *AuthErr) {}
 
 // NewHMACManager returns a new HMACManager with the provided parameters.
 func NewHMACManager(prefix string, contextKey string, hash func() hash.Hash) *HMACManager {
@@ -114,6 +120,12 @@ func (t TokenManager) ContextKey() string {
 func (t TokenManager) HashFunction() func() hash.Hash {
 	return nil
 }
+
+// PreAbort defaults to NO-OP.
+func (t TokenManager) PreAbort(*gin.Context, *AuthInfo, *AuthErr) {}
+
+// PostAuth defaults to NO-OP.
+func (t TokenManager) PostAuth(*gin.Context, *AuthInfo, *AuthErr) {}
 
 // NewTokenManager returns a new AccesKeyManager which does not check for signatures, but only validity of access key.
 func NewTokenManager(hdrName string, prefix string, contextKey string) *TokenManager {

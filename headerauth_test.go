@@ -85,6 +85,10 @@ func (m StrictSHAManager) Authorize(auth *AuthInfo) interface{} {
 	return "All good with any access key!"
 }
 
+func (m StrictSHAManager) PreAbort(c *gin.Context, a *AuthInfo, e *AuthErr) {
+	c.Header("val", "key")
+}
+
 // EmptyManager is an example definition of an AuthKeyManager struct.
 type EmptyManager struct {
 	*TokenManager

@@ -32,19 +32,22 @@ func HeaderAuth(m Manager) gin.HandlerFunc {
 		auth := &AuthInfo{}
 		if err := extractAuthInfo(m, auth, c.Request.Header.Get(m.HeaderName())); err != nil {
 			// Credentials doesn't match, we return 401 Unauthorized and abort request.
+			m.PreAbort(c, auth, err)
 			c.AbortWithError(err.Status, err.Err)
 		} else if auth.AccessKey == "" && auth.Signature == "" && !m.HeaderRequired() {
 			c.Next()
 		} else {
 			// Authorization header has the correct format.
 			if err := m.CheckHeader(auth, c.Request); err != nil {
+				m.PreAbort(c, auth, err)
 				c.AbortWithError(err.Status, err.Err)
 			} else if !isSignatureValid(m, auth) {
-				// Accesskey is valid but signature is not.
+				m.PreAbort(c, auth, err)
 				c.AbortWithError(http.StatusUnauthorized, errors.New("wrong access key or signature"))
 			} else {
 				// Accesskey and signature are valid.
 				c.Set(m.ContextKey(), m.Authorize(auth))
+				m.PostAuth(c, auth, nil)
 				c.Next()
 			}
 		}

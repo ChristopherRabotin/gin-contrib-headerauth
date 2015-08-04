@@ -5,20 +5,23 @@ package headerauth
 import (
 	"crypto/sha1"
 	"crypto/sha512"
+	//"github.com/gin-gonic/gin"
 	"hash"
 	"net/http"
 )
 
 // Manager defines the functions needed to fulfill an auth key managing role.
 type Manager interface {
-	Authorize(string) interface{}                                 // Authenticate after valid signature, return the value which will be stored in the context from the access key.
-	CheckHeader(string, *http.Request) (string, string, *AuthErr) // Checks the header for protocol validation, returns the expected secret and the expected data to sign and an error returned to fail.
-	ContextKey() string                                           // The key in the context where will be set the appropriate value if the request was correctly signed.
-	HashFunction() func() hash.Hash                               // Returns the hash function to use, e.g. sha1.New (imported from "crypto/sha1"), or sha512.New384 for SHA-384.
-	HeaderName() string                                           // Name of the header where the access key and (optional) signature should be, e.g. "Authorization".
-	HeaderPrefix() string                                         // The beginning of the string from the HTTP_AUTHORIZATION header. The exact header must be followed by a space.
-	HeaderRequired() bool                                         // Whether or not a request without any header should be accepted (c.Next) or forbidden (c.AbortWithError with status 403).
-	HeaderSeparator() (bool, string)                              // Whether there is a separator between the access key and signature, and what that separator is.
+	Authorize(*AuthInfo) interface{}               // Authenticate after valid signature, return the value which will be stored in the context from the access key.
+	CheckHeader(*AuthInfo, *http.Request) *AuthErr // Checks the header for protocol validation, returns the expected secret and the expected data to sign and an error returned to fail.
+	ContextKey() string                            // The key in the context where will be set the appropriate value if the request was correctly signed.
+	HashFunction() func() hash.Hash                // Returns the hash function to use, e.g. sha1.New (imported from "crypto/sha1"), or sha512.New384 for SHA-384.
+	HeaderName() string                            // Name of the header where the access key and (optional) signature should be, e.g. "Authorization".
+	HeaderPrefix() string                          // The beginning of the string from the HTTP_AUTHORIZATION header. The exact header must be followed by a space.
+	HeaderRequired() bool                          // Whether or not a request without any header should be accepted (c.Next) or forbidden (c.AbortWithError with status 403).
+	HeaderSeparator() (bool, string)               // Whether there is a separator between the access key and signature, and what that separator is.
+	//PreAbort(*gin.Context, *AuthInfo, *AuthErr)    // Called just prior to aborting the request.
+	//PostAuth(*gin.Context, *AuthInfo, *AuthErr)    // Called right after auth, i.e prior to calling context.Next()
 }
 
 // HMACManager is a partial implementation of Manager which helps in defining an HMAC manager.

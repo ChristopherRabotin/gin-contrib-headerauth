@@ -1,4 +1,4 @@
-// Package signedauth provides a Gin middleware for checking signed requests.
+// Package headerauth provides a Gin middleware for checking signed requests.
 // Signed requests is a good way to secure endpoint which may alter databases.
 package headerauth
 
@@ -7,38 +7,44 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/gin-gonic/gin"
-	"hash"
 	"net/http"
 	"strings"
 )
 
 // AuthErr defines the authentication failure with a status. The error string will *not* be returned by Gin.
 type AuthErr struct {
-	Status int   // The status for this failure.
-	Err    error // The error associated to this failure.
+	Status int   // Status for this failure.
+	Err    error // Error associated to this failure.
+}
+
+// AuthInfo stores the authentication information.
+type AuthInfo struct {
+	AccessKey  string // AccessKey as extracted from the header.
+	Secret     string // Secret as set in manager.Authorize.
+	Signature  string // Signature as extracted from the header.
+	DataToSign string // DataToSign as set in manager.CheckHeader.
 }
 
 // HeaderAuth is the middleware function. It must be called with a struct which implements the Manager interface.
 func HeaderAuth(m Manager) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
-		accesskey, signature, err := extractAuthInfo(m, c.Request.Header.Get(m.HeaderName()))
-		if err != nil {
+		auth := &AuthInfo{}
+		if err := extractAuthInfo(m, auth, c.Request.Header.Get(m.HeaderName())); err != nil {
 			// Credentials doesn't match, we return 401 Unauthorized and abort request.
 			c.AbortWithError(err.Status, err.Err)
-		} else if accesskey == "" && signature == "" && !m.HeaderRequired() {
+		} else if auth.AccessKey == "" && auth.Signature == "" && !m.HeaderRequired() {
 			c.Next()
 		} else {
 			// Authorization header has the correct format.
-			secret, dataToSign, err := m.CheckHeader(accesskey, c.Request)
-			if err != nil {
+			if err := m.CheckHeader(auth, c.Request); err != nil {
 				c.AbortWithError(err.Status, err.Err)
-			} else if hashFunc := m.HashFunction(); hashFunc != nil && !isSignatureValid(hashFunc, secret, dataToSign, signature) {
+			} else if !isSignatureValid(m, auth) {
 				// Accesskey is valid but signature is not.
 				c.AbortWithError(http.StatusUnauthorized, errors.New("wrong access key or signature"))
 			} else {
 				// Accesskey and signature are valid.
-				c.Set(m.ContextKey(), m.Authorize(accesskey))
+				c.Set(m.ContextKey(), m.Authorize(auth))
 				c.Next()
 			}
 		}
@@ -46,33 +52,40 @@ func HeaderAuth(m Manager) gin.HandlerFunc {
 }
 
 // extractAuthInfo extracts the authentication information from the provided auth string.
-func extractAuthInfo(m Manager, auth string) (string, string, *AuthErr) {
-	if strings.HasPrefix(auth, m.HeaderPrefix()+" ") {
-		splitheader := strings.Split(auth, " ")
+func extractAuthInfo(m Manager, auth *AuthInfo, hdr string) (err *AuthErr) {
+	if strings.HasPrefix(hdr, m.HeaderPrefix()+" ") {
+		splitheader := strings.Split(hdr, " ")
 		if len(splitheader) != 2 {
-			return "", "", &AuthErr{http.StatusUnauthorized, errors.New("invalid authorization header")}
+			return &AuthErr{http.StatusUnauthorized, errors.New("invalid authorization header")}
 		}
 
 		if hasSep, sep := m.HeaderSeparator(); hasSep {
 			splitauth := strings.Split(splitheader[1], sep)
 			if len(splitauth) != 2 {
-				return "", "", &AuthErr{http.StatusUnauthorized, errors.New("invalid format for access key and signature")}
+				return &AuthErr{http.StatusUnauthorized, errors.New("invalid format for access key and signature")}
 			}
-			return splitauth[0], splitauth[1], nil
+			auth.AccessKey = splitauth[0]
+			auth.Signature = splitauth[1]
+			return
 		}
-		return splitheader[1], "", nil
+		auth.AccessKey = splitheader[1]
+		return
 
 	} else if m.HeaderRequired() {
-		return "", "", &AuthErr{http.StatusUnauthorized, errors.New("invalid authorization header")}
+		return &AuthErr{http.StatusUnauthorized, errors.New("invalid authorization header")}
 	}
-	return "", "", nil
+	return
 }
 
 // isSignatureValid signs the request with the provided secret, and returns that signature.
-func isSignatureValid(hashFunc func() hash.Hash, secret string, data string, signature string) bool {
-	hash := hmac.New(hashFunc, []byte(secret))
-	hash.Write([]byte(data))
-	if messageMAC, err := hex.DecodeString(signature); err == nil {
+func isSignatureValid(m Manager, auth *AuthInfo) bool {
+	hashFunc := m.HashFunction()
+	if hashFunc == nil {
+		return true
+	}
+	hash := hmac.New(hashFunc, []byte(auth.Secret))
+	hash.Write([]byte(auth.DataToSign))
+	if messageMAC, err := hex.DecodeString(auth.Signature); err == nil {
 		return hmac.Equal(hash.Sum(nil), messageMAC)
 	}
 	return false

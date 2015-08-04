@@ -70,9 +70,9 @@ func (m SHA384Manager) CheckHeader(auth *headerauth.AuthInfo, req *http.Request)
 // Authorize returns the value to store in Gin's context at ContextKey().
 // This is only called once the requested has been authorized to pursue,
 // so logging of success should happen here.
-func (m SHA384Manager) Authorize(auth *headerauth.AuthInfo) interface{} {
+func (m SHA384Manager) Authorize(auth *headerauth.AuthInfo) (interface{}, *headerauth.AuthErr) {
 	if auth.AccessKey == "my_access_key" {
-		return "All good with my access key!"
+		return "All good with my access key!", nil
 	}
-	return "All good with any access key!"
+	return "All good with any access key!", nil
 }

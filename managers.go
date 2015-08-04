@@ -5,15 +5,19 @@ package headerauth
 import (
 	"crypto/sha1"
 	"crypto/sha512"
+	"encoding/base64"
+	"errors"
 	"github.com/gin-gonic/gin"
 	"hash"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 // Manager defines the functions needed to fulfill an auth key managing role.
 type Manager interface {
-	Authorize(*AuthInfo) interface{}               // Authenticate after valid signature, return the value which will be stored in the context from the access key.
-	CheckHeader(*AuthInfo, *http.Request) *AuthErr // Checks the header for protocol validation, returns the expected secret and the expected data to sign and an error returned to fail.
+	Authorize(*AuthInfo) (interface{}, *AuthErr)   // Authenticate after valid signature (or fail to authenticate), return the value which will be stored in the context from the access key.
+	CheckHeader(*AuthInfo, *http.Request) *AuthErr // Checks the header for protocol validation, returns an error if the headers are invalid.
 	ContextKey() string                            // The key in the context where will be set the appropriate value if the request was correctly signed.
 	HashFunction() func() hash.Hash                // Returns the hash function to use, e.g. sha1.New (imported from "crypto/sha1"), or sha512.New384 for SHA-384.
 	HeaderName() string                            // Name of the header where the access key and (optional) signature should be, e.g. "Authorization".
@@ -130,4 +134,56 @@ func (t TokenManager) PostAuth(*gin.Context, *AuthInfo, *AuthErr) {}
 // NewTokenManager returns a new AccesKeyManager which does not check for signatures, but only validity of access key.
 func NewTokenManager(hdrName string, prefix string, contextKey string) *TokenManager {
 	return &TokenManager{Prefix: prefix, Key: contextKey, HdrName: hdrName, Required: true}
+}
+
+// HTTPBasicAuth is an example of an HTTP Basic Auth "protection".
+// There is no signature to be computed nor a separator, so it's effectively a Token based auth.
+// Whether the username and password are correct happen in the Authorize function.
+type HTTPBasicAuth struct {
+	Realm string
+	*TokenManager
+}
+
+// HTTPBasicAuth has a Basic prefix, as per RFC.
+func (m HTTPBasicAuth) HeaderPrefix() string {
+	return "Basic"
+}
+
+// HTTPBasicAuth has the auth string in the Authorization header, as per RFC.
+func (m HTTPBasicAuth) HeaderName() string {
+	return "Authorization"
+}
+
+// CheckHeader checks that the provided auth string is correctly formatted, and
+// set the access key and secret key of AuthInfo to the username and password given.
+func (m HTTPBasicAuth) CheckHeader(auth *AuthInfo, req *http.Request) (err *AuthErr) {
+	// At this step, auth.AccessKey contains the Base64 encoded authentication string.
+	// Let's extract the provided username and password.
+	access, berr := base64.StdEncoding.DecodeString(auth.AccessKey)
+	if berr != nil {
+		return &AuthErr{Status: 401, Err: errors.New("could not base64 decode access string")}
+	}
+
+	splitauth := strings.Split(string(access), ":")
+	if len(splitauth) != 2 {
+		return &AuthErr{401, errors.New("invalid format for username and password")}
+	}
+	// The format is correct, let's set the authInfo.
+	auth.AccessKey = splitauth[0]
+	auth.Secret = splitauth[1]
+	return
+}
+
+// PreAbort will set the appropriate HTTP Basic header.
+func (m HTTPBasicAuth) PreAbort(c *gin.Context, auth *AuthInfo, err *AuthErr) {
+	if m.Realm == "" {
+		m.Realm = "Authorization Required"
+	}
+	m.Realm = "Basic realm=" + strconv.Quote(m.Realm)
+	c.Header("WWW-Authenticate", m.Realm)
+}
+
+// NewHTTPBasicAuthManager returns a new HTTP Basic Auth manager.
+func NewHTTPBasicAuthManager(contextKey string, realm string) *HTTPBasicAuth {
+	return &HTTPBasicAuth{Realm: realm, TokenManager: &TokenManager{Key: contextKey, Required: true}}
 }

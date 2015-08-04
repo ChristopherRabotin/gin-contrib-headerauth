@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/md5"
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -78,11 +79,12 @@ func (m StrictSHAManager) CheckHeader(auth *AuthInfo, req *http.Request) (err *A
 // Authorize returns the value to store in Gin's context at ContextKey().
 // This is only called once the requested has been authorized to pursue,
 // so logging of success should happen here.
-func (m StrictSHAManager) Authorize(auth *AuthInfo) interface{} {
+func (m StrictSHAManager) Authorize(auth *AuthInfo) (val interface{}, err *AuthErr) {
 	if auth.AccessKey == "my_access_key" {
-		return "All good with my access key!"
+		val = "All good with my access key!"
 	}
-	return "All good with any access key!"
+	val = "All good with any access key!"
+	return
 }
 
 // EmptyManager is an example definition of an AuthKeyManager struct.
@@ -101,8 +103,8 @@ func (m EmptyManager) CheckHeader(auth *AuthInfo, req *http.Request) (err *AuthE
 }
 
 // Authorize returns the value to store in Gin's context at ContextKey().
-func (m EmptyManager) Authorize(auth *AuthInfo) interface{} {
-	return true
+func (m EmptyManager) Authorize(auth *AuthInfo) (val interface{}, err *AuthErr) {
+	return true, nil
 }
 
 // PreAbort will set a header to the error received to confirm failure.
@@ -126,8 +128,25 @@ func (m FailingManager) CheckHeader(auth *AuthInfo, req *http.Request) *AuthErr 
 }
 
 // ContextValue returns the value to store in Gin's context at ContextKey().
-func (m FailingManager) Authorize(auth *AuthInfo) interface{} {
-	return false
+func (m FailingManager) Authorize(auth *AuthInfo) (val interface{}, err *AuthErr) {
+	return false, nil
+}
+
+type HTTPBasicDemo struct {
+	Accounts map[string]string
+	*HTTPBasicAuth
+}
+
+// Authorize returns the value to store in Gin's context at ContextKey().
+func (m HTTPBasicDemo) Authorize(auth *AuthInfo) (val interface{}, err *AuthErr) {
+	if password, ok := m.Accounts[auth.AccessKey]; !ok || password != auth.Secret {
+		err = &AuthErr{401, errors.New("invalid credentials")}
+	} else {
+		// In CheckHeader we changed the AccessKey to be the actual username, instead
+		// of the Base64 encoded authentication string.
+		val = auth.AccessKey
+	}
+	return
 }
 
 // TestExtractAuthInfo tests the correct extraction of information from the headers.
@@ -445,6 +464,62 @@ func TestMiddleware(t *testing.T) {
 					req := performRequest(router, meth, "/failTest/", headers, nil)
 					Convey("the middleware should respond 418 Teapot.", func() {
 						So(req.Code, ShouldEqual, 418)
+					})
+				})
+			}
+		})
+	})
+
+	Convey("Given an HTTP Basic manager", t, func() {
+		mgr := HTTPBasicDemo{Accounts: map[string]string{"user": "password"}, HTTPBasicAuth: NewHTTPBasicAuthManager("user", "My Protected Group")}
+		router := gin.Default()
+		router.Use(HeaderAuth(mgr))
+		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
+		for _, meth := range methods {
+			router.Handle(meth, "/HTTPBasicAuthTest/", []gin.HandlerFunc{func(c *gin.Context) {
+				c.String(http.StatusOK, "Success.")
+			}}[0])
+		}
+
+		Convey("When the username and password are valid.", func() {
+			auth := base64.StdEncoding.EncodeToString([]byte("user:password"))
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					headers["Authorization"] = []string{"Basic " + auth}
+					req := performRequest(router, meth, "/HTTPBasicAuthTest/", headers, nil)
+					Convey("the middleware should respond 200 OK.", func() {
+						So(req.Code, ShouldEqual, 200)
+					})
+				})
+			}
+		})
+		
+		Convey("When the username is valid but not the password.", func() {
+			auth := base64.StdEncoding.EncodeToString([]byte("user:password!"))
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					headers["Authorization"] = []string{"Basic " + auth}
+					req := performRequest(router, meth, "/HTTPBasicAuthTest/", headers, nil)
+					Convey("the middleware should respond 401 Unauthorized with appropriate headers", func() {
+						So(req.Code, ShouldEqual, 401)
+						So(req.HeaderMap.Get("WWW-Authenticate"), ShouldEqual, "Basic realm=\"My Protected Group\"")
+					})
+				})
+			}
+		})
+
+		Convey("When the username is not valid.", func() {
+			auth := base64.StdEncoding.EncodeToString([]byte("user!:unused"))
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					headers["Authorization"] = []string{"Basic " + auth}
+					req := performRequest(router, meth, "/HTTPBasicAuthTest/", headers, nil)
+					Convey("the middleware should respond 401 Unauthorized with appropriate headers", func() {
+						So(req.Code, ShouldEqual, 401)
+						So(req.HeaderMap.Get("WWW-Authenticate"), ShouldEqual, "Basic realm=\"My Protected Group\"")
 					})
 				})
 			}

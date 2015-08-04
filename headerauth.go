@@ -42,13 +42,19 @@ func HeaderAuth(m Manager) gin.HandlerFunc {
 				m.PreAbort(c, auth, err)
 				c.AbortWithError(err.Status, err.Err)
 			} else if !isSignatureValid(m, auth) {
+				// Signature is invalid.
 				m.PreAbort(c, auth, err)
-				c.AbortWithError(http.StatusUnauthorized, errors.New("wrong access key or signature"))
+				c.AbortWithError(http.StatusUnauthorized, errors.New("incorrect signature"))
 			} else {
-				// Accesskey and signature are valid.
-				c.Set(m.ContextKey(), m.Authorize(auth))
-				m.PostAuth(c, auth, nil)
-				c.Next()
+				// Accesskey and signature are valid. Let's attempt to authorize access.
+				if val, err := m.Authorize(auth); err != nil {
+					m.PreAbort(c, auth, err)
+					c.AbortWithError(err.Status, err.Err)
+				} else {
+					c.Set(m.ContextKey(), val)
+					m.PostAuth(c, auth, nil)
+					c.Next()
+				}
 			}
 		}
 	}

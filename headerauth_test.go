@@ -470,7 +470,7 @@ func TestMiddleware(t *testing.T) {
 		})
 	})
 
-	Convey("Given an HTTP Basic manager", t, func() {
+	Convey("Given an HTTP Basic manager with custom Realm", t, func() {
 		mgr := HTTPBasicDemo{Accounts: map[string]string{"user": "password"}, HTTPBasicAuth: NewHTTPBasicAuthManager("user", "My Protected Group")}
 		router := gin.Default()
 		router.Use(HeaderAuth(mgr))
@@ -494,7 +494,7 @@ func TestMiddleware(t *testing.T) {
 				})
 			}
 		})
-		
+
 		Convey("When the username is valid but not the password.", func() {
 			auth := base64.StdEncoding.EncodeToString([]byte("user:password!"))
 			headers := make(map[string][]string)
@@ -525,6 +525,62 @@ func TestMiddleware(t *testing.T) {
 			}
 		})
 
+		Convey("When the username and password are not correctly encoded.", func() {
+			auth := base64.StdEncoding.EncodeToString([]byte("user!unused"))
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					headers["Authorization"] = []string{"Basic " + auth}
+					req := performRequest(router, meth, "/HTTPBasicAuthTest/", headers, nil)
+					Convey("the middleware should respond 401 Unauthorized with appropriate headers", func() {
+						So(req.Code, ShouldEqual, 401)
+						So(req.HeaderMap.Get("WWW-Authenticate"), ShouldEqual, "Basic realm=\"My Protected Group\"")
+					})
+				})
+			}
+		})
+
+		Convey("When the auth string is not valid base64.", func() {
+			auth := base64.StdEncoding.EncodeToString([]byte("user!:unused")) + "a="
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					headers["Authorization"] = []string{"Basic " + auth}
+					req := performRequest(router, meth, "/HTTPBasicAuthTest/", headers, nil)
+					Convey("the middleware should respond 401 Unauthorized with appropriate headers", func() {
+						So(req.Code, ShouldEqual, 401)
+						So(req.HeaderMap.Get("WWW-Authenticate"), ShouldEqual, "Basic realm=\"My Protected Group\"")
+					})
+				})
+			}
+		})
+	})
+
+	Convey("Given an HTTP Basic manager with default Realm", t, func() {
+		mgr := HTTPBasicDemo{Accounts: map[string]string{"user": "password"}, HTTPBasicAuth: NewHTTPBasicAuthManager("user", "")}
+		router := gin.Default()
+		router.Use(HeaderAuth(mgr))
+		methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
+		for _, meth := range methods {
+			router.Handle(meth, "/HTTPBasicAuthTest/", []gin.HandlerFunc{func(c *gin.Context) {
+				c.String(http.StatusOK, "Success.")
+			}}[0])
+		}
+
+		Convey("When the username is valid but not the password.", func() {
+			auth := base64.StdEncoding.EncodeToString([]byte("user:password!"))
+			headers := make(map[string][]string)
+			for _, meth := range methods {
+				Convey(fmt.Sprintf("and doing a %s request", meth), func() {
+					headers["Authorization"] = []string{"Basic " + auth}
+					req := performRequest(router, meth, "/HTTPBasicAuthTest/", headers, nil)
+					Convey("the middleware should respond 401 Unauthorized with appropriate headers", func() {
+						So(req.Code, ShouldEqual, 401)
+						So(req.HeaderMap.Get("WWW-Authenticate"), ShouldEqual, "Basic realm=\"Authorization Required\"")
+					})
+				})
+			}
+		})
 	})
 }
 

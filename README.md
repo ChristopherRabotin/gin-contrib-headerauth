@@ -10,7 +10,9 @@ Quite customizable, including the following custom settings.
 * Access key to secret key logic, header validation and data extraction for HMAC signature (e.g. hardcoded strings, database connection, etc.), cf `managers.Manager.CheckHeader`.
 * Allow unsigned requests, so they can be intercepted by another middleware for example, cf. `managers.Manager.HeaderRequired`.
 * Context key and value which can be used in the rest of the calls, cf. `managers.Manager.ContextKey` and cf. `managers.Manager.Authorize`.
-* Allow access on token in header only (without signature verification), cf `managers.TokenManager`
+* Custom functions prior to an authentication failure (`managers.Manager.PreAbort`) and post success (`managers.Manager.PostAuth`).
+* Allow access on token in header only (without signature verification), cf `managers.TokenManager`.
+* Allow access HTTP Basic Auth , cf `managers.HTTPBasicAuth` and the [HTTP Basic Auth example](./example/httpbasicauth/).
 
 ## Performance
 Since we're using Gin, the performance is quite blazing fast. Running the full test suite takes about 0.05 seconds on a 2013 Intel core i5.
@@ -19,6 +21,14 @@ Since we're using Gin, the performance is quite blazing fast. Running the full t
 Refer to the [tests](./headerauth_test.go) and the [example](./example/) directory.
 
 # Quick start
+## Table of Contents
++ [Access key and secret key authentication](./README.md#access-key-and-secret-authorization)
+	+ [Code](./README.md#code)
++ [Token authentication](./README.md#token-based-authorization)
+	+ [Code](./README.md#code-1)
++ [HTTP Basic authentication](./README.md#http-basic-authentication)
+	+ [Code](./README.md#code-2)
+
 ## Access key and secret authorization
 ### Usage example
 Server *S* (running Gin) allows external parties to provide it information. We want to ensure that the data provided by the external party does come from
@@ -97,33 +107,36 @@ in the server logs.
 ```go
  // CheckHeader returns the secret key and the data to sign from the provided access key.
 // Here should reside additional verifications on the header, or other parts of the request, if needed.
-func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, string, *headerauth.AuthErr) {
+func (m SHA384Manager) CheckHeader(auth *headerauth.AuthInfo, req *http.Request) (err *headerauth.AuthErr) {
 	if req.ContentLength != 0 && req.Body == nil {
 		// Not sure whether net/http or Gin handles these kinds of fun situations.
-		return "", "", &headerauth.AuthErr{400, errors.New("received a forged packet")}
+		return &headerauth.AuthErr{400, errors.New("received a forged packet")}
 	}
 	// Grabbing the date and making sure it's in the correct format and is within fifteen minutes.
 	dateHeader := req.Header.Get("Date")
 	if dateHeader == "" {
-		return "", "", &headerauth.AuthErr{401, errors.New("no Date header provided")}
+		return &headerauth.AuthErr{406, errors.New("no Date header provided")}
 	}
 	date, derr := time.Parse("2006-01-02T15:04:05.000Z", dateHeader)
 	if derr != nil {
-		return "", "", &headerauth.AuthErr{401, errors.New("could not parse date")}
+		return &headerauth.AuthErr{408, errors.New("could not parse date")}
 	} else if time.Since(date) > time.Minute*15 {
-		return "", "", &headerauth.AuthErr{401, errors.New("request is too old")}
+		return &headerauth.AuthErr{410, errors.New("request is too old")}
 	}
 
 	// --> Here is where you would do a database call to check if the access key is valid
 	// --> and what the appropriate secret key is, e.g.:
-	// accessKey, secretKey, dbErr := getSecretFromDB(access)
-	if access == "my_access_key" {
-		// Let's build the expected data used for the signature.
+	// if secretKey, dbErr := getSecretFromDB(access); dbErr == nil && auth.Secret == secretKey { ...
+	if auth.AccessKey == "my_access_key" {
+		// In this example, we'll be implementing a *similar* signing method to the Amazon AWS REST one.
+		// We'll use the HTTP-Verb, the MD5 checksum of the Body, if any, and the Date header in ISO format.
+		// http://docs.aws.amazon.com/AmazonS3/latest/dev/RESTAuthentication.html
+		// Note: We are returning a variety of error codes which don't follow the spec only for the purpose of testing.
 		serializedData := req.Method + "\n"
 		if req.ContentLength != 0 {
 			body, err := ioutil.ReadAll(req.Body)
 			if err != nil {
-				return "", "", &headerauth.AuthErr{401, errors.New("could not read the body")}
+				return &headerauth.AuthErr{402, errors.New("could not read the body")}
 			}
 			hash := md5.New()
 			hash.Write(body)
@@ -134,9 +147,11 @@ func (m SHA384Manager) CheckHeader(access string, req *http.Request) (string, st
 		// We know from Authorize that the Date header is present and fits our time constaints.
 		serializedData += req.Header.Get("Date")
 
-		return m.Secret, serializedData, nil
+		auth.Secret = m.Secret
+		auth.DataToSign = serializedData
+		return
 	}
-	return "", "", &headerauth.AuthErr{401, errors.New("invalid access key")}
+	return &headerauth.AuthErr{418, errors.New("you are a teapot")}
 }
 ```
 
@@ -147,12 +162,11 @@ code which perform tasks based on the valid access key.
 // Authorize returns the value to store in Gin's context at ContextKey().
 // This is only called once the requested has been authorized to pursue,
 // so logging of success should happen here.
-func (m SHA384Manager) Authorize(access string) interface{} {
-	// --> Here is where you can log that a given access key was used.
-	if access == "my_access_key" {
-		return "All good with my access key!"
+func (m SHA384Manager) Authorize(auth *headerauth.AuthInfo) (interface{}, *headerauth.AuthErr) {
+	if auth.AccessKey == "my_access_key" {
+		return "All good with my access key!", nil
 	}
-	return "All good with any access key!"
+	return "All good with any access key!", nil
 }
 ```
 
@@ -205,19 +219,17 @@ type TMgr struct {
 }
 
 // Authorize returns the secret key from the provided access key.
-func (m TMgr) CheckHeader(access string, req *http.Request) (secret string, dataToSign string, err *AuthErr) {
-	secret = ""     // There is no secret key, just an access key.
-	dataToSign = "" // There is no data to sign in Token auth.
-	if access == "MyValidTokenWhichOnlyIKnow!" {
-		err = nil
-	} else {
+func (m TMgr) CheckHeader(auth *AuthInfo, req *http.Request) (err *AuthErr) {
+	auth.Secret = ""     // There is no secret key, just an access key.
+	auth.DataToSign = "" // There is no data to sign in Token auth.
+	if auth.AccessKey != "valid" {
 		err = &AuthErr{403, errors.New("invalid access key")}
 	}
 	return
 }
 
-func (m TMgr) Authorize(access string) interface{} {
-	return access
+func (m TMgr) Authorize(auth *AuthInfo) (val interface{}, err *AuthErr) {
+	return true, nil
 }
 ```
 
@@ -243,3 +255,62 @@ func main() {
 ### Header example
 With the previously defined manager, the following auth header would be valid.
 * `X-Token-Auth`: `Token MyValidTokenWhichOnlyIKnow!`
+
+## HTTP Basic Authentication
+[HTTP Basic Auth](https://en.wikipedia.org/wiki/Basic_access_authentication) is an **insecure** auth scheme. However, we have it as an example here
+because it's commonly used, and it demonstrates a good usage of the `PreAbort` function called just prior to aborting the Gin request if there is an
+authentification failure. In this case, we'll be setting a custom header.
+
+### Usage example
+Server *S* has a list of valid username and passwords. For some obscure reason, it is required to use HTTP Basic Auth, maybe because it is commonly
+supported by browsers.
+
+### Code
+#### Manager code
+The simplest, as with the other schemes, is to embed the helping struct, in this case `headerauth.HTTPBasicAuth`.
+
+For `headerauth.HTTPBasicAuth`, the username and password checking happens in the `Authorize` function. In the following example, we use a `map[string]string`
+but a more prod-like implementation would surely use a database connection to check that the user provided exists, and the password matches.
+
+**Note:** When the `Authorize` function is reached, the username is stored in `auth.AccessKey` and the password in `auth.Secret`
+(cf `(m HTTPBasicAuth) CheckHeader(auth *AuthInfo, req *http.Request) (err *AuthErr)` in  `managers.go`).
+
+```go
+// HTTPBasicDemo is an example of an HTTP Basic Auth.
+type HTTPBasicDemo struct {
+	Accounts map[string]string // --> Here we are using a hard coded map, but the logic is up to the dev.
+	*headerauth.HTTPBasicAuth // Embedded struct greatly helps in defining HTTP Basic Auth.
+}
+
+// Authorize checks that the provided authorization is valid.
+// --> Here is where you can interface with a database, or something which stores the list of valid usernames
+// --> and their associated passwords. Note that in the other schemes we try to fail earlier (in CheckHeader).
+func (m HTTPBasicDemo) Authorize(auth *headerauth.AuthInfo) (val interface{}, err *headerauth.AuthErr) {
+	if password, ok := m.Accounts[auth.AccessKey]; !ok || password != auth.Secret {
+		err = &headerauth.AuthErr{401, errors.New("invalid credentials")}
+	} else {
+		// In CheckHeader we changed the AccessKey to be the actual username, instead
+		// of the Base64 encoded authentication string.
+		val = auth.AccessKey
+	}
+	return
+}
+```
+
+#### Setting the auth manager as a middleware
+As usual, this is trivial.
+```go
+func main() {
+	mgr := HTTPBasicDemo{Accounts: map[string]string{"user": "password"}, HTTPBasicAuth: headerauth.NewHTTPBasicAuthManager("user", "My Protected Group")}
+	router := gin.Default()
+	router.Use(headerauth.HeaderAuth(mgr))
+	router.GET("/test/", func(c *gin.Context) {
+		c.String(200, "Success.")
+	})
+	router.Run("localhost:31337")
+}
+```
+
+### Header example
+With an HTTP Basic Auth manager, and with the example above, you'll get 200 Success with the following header.
+* `Authorization`:`Basic dXNlcjpwYXNzd29yZA==`

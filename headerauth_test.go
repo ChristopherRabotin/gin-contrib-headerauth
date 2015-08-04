@@ -85,10 +85,6 @@ func (m StrictSHAManager) Authorize(auth *AuthInfo) interface{} {
 	return "All good with any access key!"
 }
 
-func (m StrictSHAManager) PreAbort(c *gin.Context, a *AuthInfo, e *AuthErr) {
-	c.Header("val", "key")
-}
-
 // EmptyManager is an example definition of an AuthKeyManager struct.
 type EmptyManager struct {
 	*TokenManager
@@ -107,6 +103,16 @@ func (m EmptyManager) CheckHeader(auth *AuthInfo, req *http.Request) (err *AuthE
 // Authorize returns the value to store in Gin's context at ContextKey().
 func (m EmptyManager) Authorize(auth *AuthInfo) interface{} {
 	return true
+}
+
+// PreAbort will set a header to the error received to confirm failure.
+func (m EmptyManager) PreAbort(c *gin.Context, auth *AuthInfo, err *AuthErr) {
+	c.Header("X-Token-Auth-Err", err.Err.Error())
+}
+
+// PostAuth will set a header to a specific value to confirm call.
+func (m EmptyManager) PostAuth(c *gin.Context, auth *AuthInfo, err *AuthErr) {
+	c.Header("X-Token-Auth-Success", "True")
 }
 
 // FailingManager is an example definition of an AuthKeyManager struct.
@@ -383,6 +389,7 @@ func TestMiddleware(t *testing.T) {
 					req := performRequest(router, meth, "/tokenTest/", headers, nil)
 					Convey("the middleware should respond 200 OK.", func() {
 						So(req.Code, ShouldEqual, 200)
+						So(req.HeaderMap.Get("X-Token-Auth-Success"), ShouldEqual, "True")
 					})
 				})
 			}
@@ -396,6 +403,7 @@ func TestMiddleware(t *testing.T) {
 					req := performRequest(router, meth, "/tokenTest/", headers, nil)
 					Convey("the middleware should respond 403.", func() {
 						So(req.Code, ShouldEqual, 403)
+						So(req.HeaderMap.Get("X-Token-Auth-Err"), ShouldEqual, "invalid access key")
 					})
 				})
 			}

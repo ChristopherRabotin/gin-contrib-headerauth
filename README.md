@@ -272,7 +272,7 @@ The simplest, as with the other schemes, is to embed the helping struct, in this
 For `headerauth.HTTPBasicAuth`, the username and password checking happens in the `Authorize` function. In the following example, we use a `map[string]string`
 but a more prod-like implementation would surely use a database connection to check that the user provided exists, and the password matches.
 
-**Note:** When the `Authorize` function is reached, the username is stored in `auth.AccessKey` and the password in `auth.Password`
+**Note:** When the `Authorize` function is reached, the username is stored in `auth.AccessKey` and the password in `auth.Secret`
 (cf `(m HTTPBasicAuth) CheckHeader(auth *AuthInfo, req *http.Request) (err *AuthErr)` in  `managers.go`).
 
 ```go
